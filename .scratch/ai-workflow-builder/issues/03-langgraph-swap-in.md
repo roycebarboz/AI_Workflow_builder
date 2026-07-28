@@ -4,9 +4,9 @@
 
 **Blocked by:** 02 — Workflow persistence (Postgres CRUD)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Chat endpoint compiles and runs a LangGraph `StateGraph` instead of the hand-rolled loop
-- [ ] Agent node reads system prompt + enabled tools from the workflow's DB config
-- [ ] SSE streaming behavior (token deltas, tool-call-start/result, final response) unchanged from the user's perspective
-- [ ] Existing chat flow (pick workflow → chat → see steps → final response) still works end-to-end
+- [x] Chat endpoint compiles and runs a LangGraph `StateGraph` instead of the hand-rolled loop
+- [x] Agent node reads system prompt + enabled tools from the workflow's DB config
+- [x] SSE streaming behavior (token deltas, tool-call-start/result, final response) unchanged from the user's perspective
+- [x] Existing chat flow (pick workflow → chat → see steps → final response) still works end-to-end

@@ -11,6 +11,7 @@ import json
 
 from app.llm import ContentDelta, StreamDone, ToolCallRequest
 from app.main import app, get_llm_client
+from app.tools.registry import TOOLS, ToolSpec
 
 
 class FakeLLMClient:
@@ -114,6 +115,39 @@ def test_chat_with_tool_call(client):
     assert events[0][1] == {"name": "calculator", "arguments": {"expression": "2 + 2"}}
     assert events[1][1] == {"name": "calculator", "result": "4"}
     assert events[-1][1] == {"text": "4"}
+
+
+def test_chat_surfaces_tool_failure_as_error_event(client, monkeypatch):
+    def _boom(**kwargs):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setitem(TOOLS, "calculator", ToolSpec(schema=TOOLS["calculator"].schema, fn=_boom))
+
+    workflow_id = _create_workflow(client)
+    turns = [
+        [
+            ToolCallRequest(id="call_1", name="calculator", arguments='{"expression": "2 + 2"}'),
+            StreamDone(finish_reason="tool_calls"),
+        ],
+    ]
+    app.dependency_overrides[get_llm_client] = _override_with(turns)
+    try:
+        with client.stream(
+            "POST",
+            "/chat",
+            json={
+                "workflow_id": workflow_id,
+                "messages": [{"role": "user", "content": "what is 2+2"}],
+            },
+        ) as response:
+            assert response.status_code == 200
+            body = "".join(response.iter_text())
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
+    events = _parse_sse(body)
+    assert [e[0] for e in events] == ["tool_call_start", "error"]
+    assert events[1][1] == {"message": "Tool 'calculator' failed: kaboom"}
 
 
 def test_chat_rejects_empty_messages(client):

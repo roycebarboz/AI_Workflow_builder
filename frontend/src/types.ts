@@ -1,6 +1,37 @@
+export type GraphNodeType = "start" | "agent" | "end";
+
+export interface GraphPosition {
+  x: number;
+  y: number;
+}
+
+export interface AgentNodeData {
+  system_prompt: string;
+  enabled_tools: string[];
+}
+
+export interface GraphNode {
+  id: string;
+  type: GraphNodeType;
+  position: GraphPosition;
+  data: Record<string, unknown>;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+}
+
+export interface WorkflowGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
 export interface Workflow {
   id: string;
   name: string;
+  graph: WorkflowGraph;
   system_prompt: string;
   enabled_tools: string[];
   created_at: string;

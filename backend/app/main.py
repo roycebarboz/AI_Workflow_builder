@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import os
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
+
+load_dotenv()
 
 from .agent import (
     AgentEvent,

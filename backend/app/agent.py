@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Iterator
 
 from .llm import ContentDelta, LLMClient, StreamDone, ToolCallRequest
-from .tools.registry import TOOLS
+from .tools.registry import TOOLS, tool_schemas
 
 MAX_ROUNDS = 8
 
@@ -51,7 +51,7 @@ def run_agent_loop(
     history: list[dict],
 ) -> Iterator[AgentEvent]:
     messages: list[dict] = [{"role": "system", "content": system_prompt}, *history]
-    tools = [spec.schema for spec in TOOLS.values()]
+    tools = tool_schemas()
 
     for _ in range(MAX_ROUNDS):
         content_parts: list[str] = []

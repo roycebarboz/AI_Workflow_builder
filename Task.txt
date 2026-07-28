@@ -1,0 +1,65 @@
+Build a Mini AI Workflow Builder
+Objective
+Build a web app where users create simple AI workflows from a system prompt, one or more
+tools, and some decision logic.
+We want to see how you build a configurable AI system, not a single hardcoded agent.
+Problem statement
+Users should be able to configure a workflow visually and then chat with it.
+Each workflow has:
+• A system prompt
+• One or more tools
+• A sequence of steps, or a simple decision flow
+• A chat interface to run it
+Workflows are saved, so users can edit and reuse them later.
+Functional requirements
+Workflow builder
+Let users:
+• Create a new workflow
+• Name it
+• Set a system prompt
+• Enable or disable tools
+• Save and edit workflows
+Tools
+Include at least three tools, for example:
+• Web search
+• Calculator
+• Mock email sender (logs the email instead of sending it)
+Add more if you want.
+Chat interface
+Users should be able to:
+• Pick a saved workflow
+• Chat with it
+• See tool calls and intermediate steps
+• Get the final response
+Technical requirements
+• Any frontend framework.
+• Any backend framework.
+• Store workflows in a database.
+• Any LLM provider.
+• It should run locally, with clear setup instructions.
+Bonus (optional)
+• Drag-and-drop workflow editor
+• Streaming responses
+• Multiple LLM providers
+• Workflow versioning
+• Execution history
+• Beer UI/UX
+• Docker setup
+Submission
+Include:
+• The GitHub repository
+• A README with setup instructions
+• .env.example
+• A short write-up of your architecture and design decisions
+Evaluation criteria
+We mainly look at:
+• Overall architecture
+• AI orchestration
+• Code quality
+• Frontend implementation
+• Backend and persistence
+• Extensibility
+• User experience
+• Completeness over polish
+We'd rather see a working end-to-end solution than an incomplete one with advanced
+features.

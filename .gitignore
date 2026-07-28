@@ -1,0 +1,22 @@
+# Env files
+.env
+backend/.env
+frontend/.env
+
+# Backend (Python / uv)
+backend/.venv/
+backend/.pytest_cache/
+**/__pycache__/
+*.pyc
+
+# Frontend (Node / Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+node_modules/
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store

@@ -1,0 +1,118 @@
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: var(--text-secondary, #888);
+  font-size: 0.85rem;
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 200px;
+}
+
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.message {
+  padding: 10px 14px;
+  border-radius: 10px;
+  max-width: 85%;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+.message.user {
+  align-self: flex-end;
+  background: #2563eb;
+  color: white;
+}
+
+.message.assistant {
+  align-self: flex-start;
+  background: #f1f3f5;
+  color: #111;
+}
+
+.step {
+  align-self: flex-start;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  max-width: 90%;
+}
+
+.step.error {
+  background: #fff1f0;
+  border-color: #ffa39e;
+}
+
+.step-result {
+  margin-top: 2px;
+  color: #444;
+}
+
+.cursor {
+  display: inline-block;
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.chat-input {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  font-size: 1rem;
+}
+
+.chat-input button {
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: none;
+  background: #2563eb;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.chat-input button:disabled {
+  background: #9ab6ee;
+  cursor: not-allowed;
+}

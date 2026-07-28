@@ -1,0 +1,18 @@
+[project]
+name = "ai-workflow-builder-backend"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.140.13",
+    "openai>=2.49.0",
+    "pydantic>=2.13.4",
+    "python-dotenv>=1.2.2",
+    "sse-starlette>=3.4.6",
+    "uvicorn[standard]>=0.51.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

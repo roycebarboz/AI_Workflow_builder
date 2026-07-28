@@ -13,6 +13,8 @@ from app.llm import ContentDelta, StreamDone, ToolCallRequest
 from app.main import app, get_llm_client
 from app.tools.registry import TOOLS, ToolSpec
 
+from .factories import workflow_graph
+
 
 class FakeLLMClient:
     """Replays a scripted list of turns, one list of events per call to stream_chat."""
@@ -31,12 +33,12 @@ def _override_with(turns: list[list]):
     return _get
 
 
-def _create_workflow(client, **overrides) -> str:
+def _create_workflow(client) -> str:
     payload = {
         "name": "Test workflow",
-        "system_prompt": "You are a helpful assistant with access to a calculator tool.",
-        "enabled_tools": ["calculator"],
-        **overrides,
+        "graph": workflow_graph(
+            "You are a helpful assistant with access to a calculator tool.", ["calculator"]
+        ),
     }
     response = client.post("/workflows", json=payload)
     assert response.status_code == 201

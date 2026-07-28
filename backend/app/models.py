@@ -22,6 +22,7 @@ class Workflow(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String, nullable=False)
+    graph: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
     enabled_tools: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

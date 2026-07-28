@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from .db import get_db
 from .models import Workflow
-from .schemas import ToolInfo, WorkflowCreate, WorkflowOut, WorkflowUpdate
+from .schemas import ToolInfo, WorkflowCreate, WorkflowGraph, WorkflowOut, WorkflowUpdate, agent_node_data
 from .tools.registry import TOOLS
 
 router = APIRouter()
@@ -18,13 +18,20 @@ def get_workflow_or_404(workflow_id: str, db: Session) -> Workflow:
     return workflow
 
 
+def _apply_graph(workflow: Workflow, graph: WorkflowGraph) -> None:
+    """Writes the graph plus the flat system_prompt/enabled_tools columns the
+    LangGraph compiler reads (see agent.py) — kept in lockstep here so the two
+    representations of the agent node's config never drift apart."""
+    agent_data = agent_node_data(graph)
+    workflow.graph = graph.model_dump()
+    workflow.system_prompt = agent_data.get("system_prompt", "")
+    workflow.enabled_tools = agent_data.get("enabled_tools", [])
+
+
 @router.post("/workflows", response_model=WorkflowOut, status_code=201)
 def create_workflow(payload: WorkflowCreate, db: Session = Depends(get_db)) -> Workflow:
-    workflow = Workflow(
-        name=payload.name,
-        system_prompt=payload.system_prompt,
-        enabled_tools=payload.enabled_tools,
-    )
+    workflow = Workflow(name=payload.name)
+    _apply_graph(workflow, payload.graph)
     db.add(workflow)
     db.commit()
     db.refresh(workflow)
@@ -46,10 +53,8 @@ def update_workflow(
     workflow_id: str, payload: WorkflowUpdate, db: Session = Depends(get_db)
 ) -> Workflow:
     workflow = get_workflow_or_404(workflow_id, db)
-
     workflow.name = payload.name
-    workflow.system_prompt = payload.system_prompt
-    workflow.enabled_tools = payload.enabled_tools
+    _apply_graph(workflow, payload.graph)
     db.commit()
     db.refresh(workflow)
     return workflow

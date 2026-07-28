@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import ReactFlow, {
+  addEdge,
   Controls,
   ReactFlowProvider,
-  type Edge,
+  useEdgesState,
   useNodesState,
+  type Connection,
+  type Edge,
+  type ReactFlowInstance,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { createWorkflow, listTools, updateWorkflow } from "../api/workflows";
@@ -12,9 +16,11 @@ import {
   END_NODE_ID,
   START_NODE_ID,
   agentDataOf,
+  defaultDataFor,
   defaultGraph,
+  newNodeId,
 } from "../lib/defaultGraph";
-import type { GraphNodeType, ToolInfo, Workflow } from "../types";
+import type { GraphNode, GraphNodeType, ToolInfo, Workflow } from "../types";
 import { nodeTypes } from "./canvas/GraphNodes";
 import {
   AgentIcon,
@@ -37,15 +43,31 @@ interface WorkflowEditorProps {
   onSaved: () => void;
 }
 
+function stringField(data: Record<string, unknown>, key: string): string {
+  return typeof data[key] === "string" ? (data[key] as string) : "";
+}
+
+function initialNodeData(node: GraphNode): Record<string, unknown> {
+  if (node.type === "condition") {
+    return { keyword: stringField(node.data, "keyword") };
+  }
+  if (node.type === "end") {
+    return { message: stringField(node.data, "message") };
+  }
+  return {};
+}
+
 function PanelShell({
   title,
   desc,
   onClose,
+  onDelete,
   children,
 }: {
   title: string;
   desc: string;
   onClose: () => void;
+  onDelete?: () => void;
   children: ReactNode;
 }) {
   return (
@@ -55,9 +77,16 @@ function PanelShell({
           <div className="panel-head-title">{title}</div>
           <div className="panel-head-desc">{desc}</div>
         </div>
-        <button type="button" className="panel-close" onClick={onClose} aria-label="Close">
-          <CloseIcon />
-        </button>
+        <div className="panel-head-actions">
+          {onDelete && (
+            <button type="button" className="panel-delete" onClick={onDelete}>
+              Delete
+            </button>
+          )}
+          <button type="button" className="panel-close" onClick={onClose} aria-label="Close">
+            <CloseIcon />
+          </button>
+        </div>
       </div>
       <div className="panel-content-inner">{children}</div>
     </div>
@@ -70,17 +99,19 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
     [workflow]
   );
 
-  const [nodes, , onNodesChange] = useNodesState(
+  const [nodes, setNodes, onNodesChange] = useNodesState(
     initialGraph.nodes.map((n) => ({
       id: n.id,
       type: n.type,
       position: n.position,
-      data: {},
+      data: initialNodeData(n),
+      deletable: n.id !== START_NODE_ID && n.id !== AGENT_NODE_ID && n.id !== END_NODE_ID,
     }))
   );
-  const [edges] = useState<Edge[]>(
+  const [edges, setEdges, onEdgesChange] = useEdgesState(
     initialGraph.edges.map((e) => ({ ...e, type: "smoothstep" }))
   );
+  const rfInstance = useRef<ReactFlowInstance | null>(null);
 
   const initialAgentData = useMemo(() => agentDataOf(initialGraph), [initialGraph]);
   const [name, setName] = useState(workflow?.name ?? "");
@@ -110,6 +141,70 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
     });
   }
 
+  function updateNodeData(nodeId: string, patch: Record<string, unknown>) {
+    setNodes((nds) => nds.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, ...patch } } : n)));
+  }
+
+  function deleteNode(nodeId: string) {
+    setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+    setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    setSelectedNodeId(null);
+  }
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      setEdges((eds) => addEdge({ ...connection, type: "smoothstep" }, eds));
+    },
+    [setEdges]
+  );
+
+  const isValidConnection = useCallback(
+    (connection: Connection | Edge) => {
+      const { source, target, sourceHandle } = connection;
+      if (!source || !target || source === target) return false;
+      const sourceNode = nodes.find((n) => n.id === source);
+      const targetNode = nodes.find((n) => n.id === target);
+      if (!sourceNode || !targetNode) return false;
+      if (sourceNode.type === "agent" && targetNode.type !== "end") return false;
+      if (sourceNode.type === "start" && targetNode.type === "end") return false;
+      const handleKey = sourceHandle ?? null;
+      const alreadyWired = edges.some(
+        (e) => e.source === source && (e.sourceHandle ?? null) === handleKey
+      );
+      return !alreadyWired;
+    },
+    [nodes, edges]
+  );
+
+  const onDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const onDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const type = event.dataTransfer.getData("application/reactflow") as GraphNodeType | "";
+      if (!type || !rfInstance.current) return;
+      const position = rfInstance.current.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      const id = newNodeId(type);
+      setNodes((nds) => [
+        ...nds,
+        { id, type, position, data: defaultDataFor(type), deletable: true },
+      ]);
+      setSelectedNodeId(id);
+    },
+    [setNodes]
+  );
+
+  function onPaletteDragStart(event: DragEvent<HTMLDivElement>, type: GraphNodeType) {
+    event.dataTransfer.setData("application/reactflow", type);
+    event.dataTransfer.effectAllowed = "move";
+  }
+
   async function handleSave(): Promise<Workflow | null> {
     if (!name.trim()) {
       setError("Name is required before saving.");
@@ -121,16 +216,29 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
       const input = {
         name: name.trim(),
         graph: {
-          nodes: nodes.map((n) => ({
-            id: n.id,
-            type: n.type as GraphNodeType,
-            position: n.position,
-            data:
-              n.id === AGENT_NODE_ID
-                ? { system_prompt: systemPrompt, enabled_tools: Array.from(enabledTools) }
-                : {},
+          nodes: nodes.map((n) => {
+            let data: Record<string, unknown> = {};
+            if (n.id === AGENT_NODE_ID) {
+              data = { system_prompt: systemPrompt, enabled_tools: Array.from(enabledTools) };
+            } else if (n.type === "condition") {
+              data = { keyword: stringField(n.data, "keyword") };
+            } else if (n.type === "end") {
+              const message = stringField(n.data, "message").trim();
+              data = message ? { message } : {};
+            }
+            return {
+              id: n.id,
+              type: n.type as GraphNodeType,
+              position: n.position,
+              data,
+            };
+          }),
+          edges: edges.map((e) => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            ...(e.sourceHandle ? { sourceHandle: e.sourceHandle } : {}),
           })),
-          edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target })),
         },
       };
       const saved = currentWorkflow
@@ -156,6 +264,7 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
   }
 
   const nodesWithSelection = nodes.map((n) => ({ ...n, selected: n.id === selectedNodeId }));
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
 
   return (
     <div className="editor-app">
@@ -215,13 +324,23 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
             </span>
             Agent
           </div>
-          <div className="palette-item disabled" title="Coming soon">
+          <div
+            className="palette-item draggable"
+            draggable
+            onDragStart={(e) => onPaletteDragStart(e, "condition")}
+            title="Drag onto the canvas"
+          >
             <span className="pal-icon cond">
               <ConditionIcon />
             </span>
             Condition
           </div>
-          <div className="palette-item">
+          <div
+            className="palette-item draggable"
+            draggable
+            onDragStart={(e) => onPaletteDragStart(e, "end")}
+            title="Drag onto the canvas"
+          >
             <span className="pal-icon end">
               <EndIcon />
             </span>
@@ -229,18 +348,22 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
           </div>
         </div>
 
-        <div className="canvas-wrap">
+        <div className="canvas-wrap" onDragOver={onDragOver} onDrop={onDrop}>
           {mode === "run" && <div className="run-dim" />}
           <ReactFlowProvider>
             <ReactFlow
               nodes={nodesWithSelection}
               edges={edges}
               nodeTypes={nodeTypes}
+              onInit={(instance) => (rfInstance.current = instance)}
               onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              isValidConnection={isValidConnection}
               onNodeClick={(_, node) => mode === "edit" && setSelectedNodeId(node.id)}
               onPaneClick={() => setSelectedNodeId(null)}
               nodesDraggable={mode === "edit"}
-              nodesConnectable={false}
+              nodesConnectable={mode === "edit"}
               elementsSelectable={mode === "edit"}
               fitView
               proOptions={{ hideAttribution: true }}
@@ -316,16 +439,49 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
               </PanelShell>
             )}
 
-            {selectedNodeId === END_NODE_ID && (
+            {selectedNode?.type === "condition" && (
+              <PanelShell
+                title="Condition"
+                desc="Checks the user's latest message for a keyword and routes down the True or False branch accordingly."
+                onClose={() => setSelectedNodeId(null)}
+                onDelete={() => deleteNode(selectedNode.id)}
+              >
+                <div className="field">
+                  <div className="field-label">Keyword to match</div>
+                  <input
+                    className="text-input"
+                    value={stringField(selectedNode.data, "keyword")}
+                    onChange={(e) => updateNodeData(selectedNode.id, { keyword: e.target.value })}
+                    placeholder="e.g. urgent"
+                  />
+                </div>
+                <p className="info-note">
+                  Wire the <b>True</b> handle to where matching messages should go, and{" "}
+                  <b>False</b> to where everything else should go.
+                </p>
+              </PanelShell>
+            )}
+
+            {selectedNode?.type === "end" && (
               <PanelShell
                 title="End"
                 desc="Terminal node."
                 onClose={() => setSelectedNodeId(null)}
+                onDelete={selectedNode.id !== END_NODE_ID ? () => deleteNode(selectedNode.id) : undefined}
               >
                 <p className="info-note">
-                  When this path is reached, the run finishes and the agent's last message
-                  becomes the final response shown in chat.
+                  When this path is reached after the agent, the run finishes and the agent's
+                  last message becomes the final response shown in chat.
                 </p>
+                <div className="field">
+                  <div className="field-label">Canned message (optional)</div>
+                  <textarea
+                    className="ta"
+                    value={stringField(selectedNode.data, "message")}
+                    onChange={(e) => updateNodeData(selectedNode.id, { message: e.target.value })}
+                    placeholder="Only used if this end is reached without going through the agent, e.g. from a condition's branch."
+                  />
+                </div>
               </PanelShell>
             )}
           </div>

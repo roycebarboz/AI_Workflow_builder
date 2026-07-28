@@ -1,4 +1,4 @@
-import type { AgentNodeData, WorkflowGraph } from "../types";
+import type { AgentNodeData, ConditionNodeData, GraphNodeType, WorkflowGraph } from "../types";
 
 export const START_NODE_ID = "start";
 export const AGENT_NODE_ID = "agent";
@@ -6,6 +6,24 @@ export const END_NODE_ID = "end";
 
 export function defaultAgentData(): AgentNodeData {
   return { system_prompt: "", enabled_tools: [] };
+}
+
+export function defaultConditionData(): ConditionNodeData {
+  return { keyword: "" };
+}
+
+let newNodeCounter = 0;
+
+/** Ids for nodes added via canvas drag-and-drop (condition/end branches) — the
+ * fixed Start/Agent/End trio above always keeps its own well-known ids. */
+export function newNodeId(type: GraphNodeType): string {
+  newNodeCounter += 1;
+  return `${type}-${Date.now()}-${newNodeCounter}`;
+}
+
+export function defaultDataFor(type: GraphNodeType): Record<string, unknown> {
+  if (type === "condition") return { ...defaultConditionData() };
+  return {};
 }
 
 /** Start → Agent → End, the fixed topology ticket 04 supports. */

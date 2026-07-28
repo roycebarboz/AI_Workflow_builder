@@ -83,11 +83,9 @@ def chat(
     workflow = get_workflow_or_404(request.workflow_id, db)
 
     history = [m.model_dump() for m in request.messages]
-    system_prompt = workflow.system_prompt
-    enabled_tools = workflow.enabled_tools
 
     def event_stream():
-        for event in run_agent_loop(llm_client, system_prompt, history, enabled_tools):
+        for event in run_agent_loop(llm_client, workflow.graph, history):
             yield _to_sse(event)
 
     return EventSourceResponse(event_stream())

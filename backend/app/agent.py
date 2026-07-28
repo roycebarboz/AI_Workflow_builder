@@ -49,9 +49,10 @@ def run_agent_loop(
     llm_client: LLMClient,
     system_prompt: str,
     history: list[dict],
+    enabled_tools: list[str] | None = None,
 ) -> Iterator[AgentEvent]:
     messages: list[dict] = [{"role": "system", "content": system_prompt}, *history]
-    tools = tool_schemas()
+    tools = tool_schemas(enabled_tools)
 
     for _ in range(MAX_ROUNDS):
         content_parts: list[str] = []

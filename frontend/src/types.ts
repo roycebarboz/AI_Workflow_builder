@@ -1,3 +1,17 @@
+export interface Workflow {
+  id: string;
+  name: string;
+  system_prompt: string;
+  enabled_tools: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ToolInfo {
+  name: string;
+  description: string;
+}
+
 export type ChatRole = "user" | "assistant";
 
 export interface ChatMessage {

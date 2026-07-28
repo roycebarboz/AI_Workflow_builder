@@ -4,10 +4,10 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] FastAPI backend with a `/chat` (or similar) SSE endpoint
-- [ ] Hardcoded system prompt + one tool (e.g. calculator) wired into a real OpenAI tool-call loop
-- [ ] SSE stream carries token deltas, tool-call-start/result events, and a final-response event
-- [ ] Minimal frontend chat UI: send a message, see tool-call steps and the streamed final response render distinctly
-- [ ] README documents how to run this slice locally (env vars, start commands)
+- [x] FastAPI backend with a `/chat` (or similar) SSE endpoint
+- [x] Hardcoded system prompt + one tool (e.g. calculator) wired into a real OpenAI tool-call loop
+- [x] SSE stream carries token deltas, tool-call-start/result events, and a final-response event
+- [x] Minimal frontend chat UI: send a message, see tool-call steps and the streamed final response render distinctly
+- [x] README documents how to run this slice locally (env vars, start commands)

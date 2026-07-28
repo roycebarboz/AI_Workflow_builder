@@ -26,11 +26,14 @@ function parseBlock(block: string): ChatSSEEvent | null {
 }
 
 /** Streams a chat turn, yielding one normalized SSE event at a time. */
-export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<ChatSSEEvent> {
+export async function* streamChat(
+  workflowId: string,
+  messages: ChatMessage[]
+): AsyncGenerator<ChatSSEEvent> {
   const response = await fetch(`${API_BASE_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ workflow_id: workflowId, messages }),
   });
 
   if (!response.ok || !response.body) {

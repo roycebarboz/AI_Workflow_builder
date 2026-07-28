@@ -19,5 +19,6 @@ TOOLS: dict[str, ToolSpec] = {
 }
 
 
-def tool_schemas() -> list[dict]:
-    return [spec.schema for spec in TOOLS.values()]
+def tool_schemas(enabled: list[str] | None = None) -> list[dict]:
+    names = TOOLS.keys() if enabled is None else enabled
+    return [TOOLS[name].schema for name in names if name in TOOLS]

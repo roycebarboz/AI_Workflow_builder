@@ -17,7 +17,13 @@ interface Turn {
   isStreaming: boolean;
 }
 
-export function Chat() {
+interface ChatProps {
+  workflowId: string;
+  workflowName: string;
+  onBack: () => void;
+}
+
+export function Chat({ workflowId, workflowName, onBack }: ChatProps) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -52,7 +58,7 @@ export function Chat() {
     };
 
     try {
-      for await (const { event, data } of streamChat(history)) {
+      for await (const { event, data } of streamChat(workflowId, history)) {
         if (event === "token") {
           const { text: delta } = data as TokenEventData;
           updateLastTurn((t) => ({ ...t, assistantText: t.assistantText + delta }));
@@ -98,6 +104,12 @@ export function Chat() {
 
   return (
     <div className="chat">
+      <div className="chat-header">
+        <button type="button" className="btn-link" onClick={onBack}>
+          ← Workflows
+        </button>
+        <h2>{workflowName}</h2>
+      </div>
       <div className="chat-history">
         {turns.map((turn, i) => (
           <div className="turn" key={i}>

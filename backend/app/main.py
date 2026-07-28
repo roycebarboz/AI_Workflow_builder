@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
 load_dotenv()
@@ -21,14 +22,13 @@ from .agent import (
     TokenEvent,
     run_agent_loop,
 )
+from .db import get_db
 from .llm import LLMClient, OpenAILLMClient
-
-SYSTEM_PROMPT = (
-    "You are a helpful assistant with access to a calculator tool. "
-    "Use it whenever exact arithmetic matters instead of guessing."
-)
+from .workflows_api import get_workflow_or_404
+from .workflows_api import router as workflows_router
 
 app = FastAPI(title="AI Workflow Builder — backend")
+app.include_router(workflows_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -50,6 +50,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    workflow_id: str
     messages: list[ChatMessage] = Field(min_length=1)
 
 
@@ -74,11 +75,19 @@ def _to_sse(event: AgentEvent) -> dict:
 
 
 @app.post("/chat")
-def chat(request: ChatRequest, llm_client: LLMClient = Depends(get_llm_client)):
+def chat(
+    request: ChatRequest,
+    llm_client: LLMClient = Depends(get_llm_client),
+    db: Session = Depends(get_db),
+):
+    workflow = get_workflow_or_404(request.workflow_id, db)
+
     history = [m.model_dump() for m in request.messages]
+    system_prompt = workflow.system_prompt
+    enabled_tools = workflow.enabled_tools
 
     def event_stream():
-        for event in run_agent_loop(llm_client, SYSTEM_PROMPT, history):
+        for event in run_agent_loop(llm_client, system_prompt, history, enabled_tools):
             yield _to_sse(event)
 
     return EventSourceResponse(event_stream())

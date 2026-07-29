@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import ReactFlow, {
   addEdge,
   Controls,
+  reconnectEdge,
   ReactFlowProvider,
   useEdgesState,
   useNodesState,
@@ -158,6 +159,26 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
     [setEdges]
   );
 
+  // While an existing edge's endpoint is being dragged, its own (still-current) wiring
+  // must not count against the "source already has an outgoing edge" validity rule below —
+  // otherwise every reconnect target would be rejected, including valid ones.
+  const reconnectingEdgeId = useRef<string | null>(null);
+
+  const onReconnectStart = useCallback((_event: unknown, edge: Edge) => {
+    reconnectingEdgeId.current = edge.id;
+  }, []);
+
+  const onReconnectEnd = useCallback(() => {
+    reconnectingEdgeId.current = null;
+  }, []);
+
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      setEdges((eds) => reconnectEdge(oldEdge, newConnection, eds));
+    },
+    [setEdges]
+  );
+
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
       const { source, target, sourceHandle } = connection;
@@ -169,7 +190,10 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
       if (sourceNode.type === "start" && targetNode.type === "end") return false;
       const handleKey = sourceHandle ?? null;
       const alreadyWired = edges.some(
-        (e) => e.source === source && (e.sourceHandle ?? null) === handleKey
+        (e) =>
+          e.id !== reconnectingEdgeId.current &&
+          e.source === source &&
+          (e.sourceHandle ?? null) === handleKey
       );
       return !alreadyWired;
     },
@@ -359,12 +383,16 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              onReconnect={onReconnect}
+              onReconnectStart={onReconnectStart}
+              onReconnectEnd={onReconnectEnd}
               isValidConnection={isValidConnection}
               onNodeClick={(_, node) => mode === "edit" && setSelectedNodeId(node.id)}
               onPaneClick={() => setSelectedNodeId(null)}
               nodesDraggable={mode === "edit"}
               nodesConnectable={mode === "edit"}
               elementsSelectable={mode === "edit"}
+              edgesUpdatable={mode === "edit"}
               fitView
               proOptions={{ hideAttribution: true }}
               defaultEdgeOptions={{ style: { stroke: "#3a3a42", strokeWidth: 1.6 } }}

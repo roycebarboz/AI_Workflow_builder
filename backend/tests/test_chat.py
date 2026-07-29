@@ -143,6 +143,57 @@ def test_chat_with_tool_call(client):
     assert events[-1][1] == {"text": "4"}
 
 
+def test_chat_with_send_email_tool(client):
+    """End-to-end check that a newly-registered tool is wired into the
+    registry, the /tools endpoint, and the agent tool-call loop without
+    any agent loop/graph engine changes — mirrors test_chat_with_tool_call."""
+    payload = {
+        "name": "Email workflow",
+        "graph": workflow_graph(
+            "You are a helpful assistant with access to an email tool.", ["send_email"]
+        ),
+    }
+    workflow_id = client.post("/workflows", json=payload).json()["id"]
+
+    tool_names = [t["name"] for t in client.get("/tools").json()]
+    assert "send_email" in tool_names
+
+    turns = [
+        [
+            ToolCallRequest(
+                id="call_1",
+                name="send_email",
+                arguments='{"to": "a@example.com", "subject": "Hi", "body": "Hello"}',
+            ),
+            StreamDone(finish_reason="tool_calls"),
+        ],
+        [ContentDelta(text="Sent!"), StreamDone(finish_reason="stop")],
+    ]
+    app.dependency_overrides[get_llm_client] = _override_with(turns)
+    try:
+        with client.stream(
+            "POST",
+            "/chat",
+            json={"workflow_id": workflow_id, "messages": [{"role": "user", "content": "email a@example.com"}]},
+        ) as response:
+            assert response.status_code == 200
+            body = "".join(response.iter_text())
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
+    events = _parse_sse(body)
+    assert [e[0] for e in events] == [
+        "tool_call_start",
+        "tool_call_result",
+        "token",
+        "final_response",
+    ]
+    assert events[1][1] == {
+        "name": "send_email",
+        "result": "Mock email sent to a@example.com (subject: 'Hi')",
+    }
+
+
 def test_chat_surfaces_tool_failure_as_error_event(client, monkeypatch):
     def _boom(**kwargs):
         raise RuntimeError("kaboom")

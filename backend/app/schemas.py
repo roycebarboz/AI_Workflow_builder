@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .tools.registry import TOOLS
 
-NodeType = Literal["start", "agent", "condition", "end"]
+NodeType = Literal["start", "agent", "condition", "end", "if_else", "sticky_note"]
 
 # The two branches a condition node's outgoing edges are tagged with via
 # React Flow's `sourceHandle` — shared with agent.py's compiler so the two
@@ -15,6 +15,10 @@ NodeType = Literal["start", "agent", "condition", "end"]
 TRUE_BRANCH: Literal["true"] = "true"
 FALSE_BRANCH: Literal["false"] = "false"
 CONDITION_BRANCHES = {TRUE_BRANCH, FALSE_BRANCH}
+
+# The reserved sourceHandle for an if/else node's fallback branch — every
+# if/else node has exactly one, alongside its user-defined branch ids.
+ELSE_BRANCH: Literal["else"] = "else"
 
 
 class GraphPosition(BaseModel):
@@ -74,8 +78,8 @@ class WorkflowGraph(BaseModel):
         agent_edges = edges_by_source.get(agent_node.id, [])
         if len(agent_edges) != 1:
             raise ValueError("Agent node must have exactly one outgoing edge")
-        if by_id[agent_edges[0].target].type != "end":
-            raise ValueError("Agent node must lead directly to an end node")
+        if by_id[agent_edges[0].target].type not in ("end", "if_else"):
+            raise ValueError("Agent node must lead directly to an end node or an if/else node")
 
         for node in self.nodes:
             if node.type == "condition":
@@ -93,6 +97,47 @@ class WorkflowGraph(BaseModel):
                 message = node.data.get("message")
                 if message is not None and not isinstance(message, str):
                     raise ValueError(f"End node '{node.id}' message must be a string")
+            if node.type == "if_else":
+                branches = node.data.get("branches")
+                if not isinstance(branches, list) or not branches:
+                    raise ValueError(f"If/else node '{node.id}' needs at least one branch")
+                branch_ids: list[str] = []
+                for branch in branches:
+                    if not isinstance(branch, dict):
+                        raise ValueError(f"If/else node '{node.id}' has an invalid branch")
+                    branch_id = branch.get("id")
+                    label = branch.get("label")
+                    keyword = branch.get("keyword")
+                    if not isinstance(branch_id, str) or not branch_id.strip():
+                        raise ValueError(f"If/else node '{node.id}' has a branch missing an id")
+                    if branch_id == ELSE_BRANCH:
+                        raise ValueError(
+                            f"If/else node '{node.id}' cannot use the reserved id 'else' for a branch"
+                        )
+                    if not isinstance(label, str) or not label.strip():
+                        raise ValueError(
+                            f"If/else node '{node.id}' branch '{branch_id}' needs a non-empty label"
+                        )
+                    if not isinstance(keyword, str) or not keyword.strip():
+                        raise ValueError(
+                            f"If/else node '{node.id}' branch '{branch_id}' needs a non-empty keyword"
+                        )
+                    branch_ids.append(branch_id)
+                if len(branch_ids) != len(set(branch_ids)):
+                    raise ValueError(f"If/else node '{node.id}' has duplicate branch ids")
+
+                branch_edges = edges_by_source.get(node.id, [])
+                handles = {e.sourceHandle for e in branch_edges}
+                expected = set(branch_ids) | {ELSE_BRANCH}
+                if len(branch_edges) != len(expected) or handles != expected:
+                    raise ValueError(
+                        f"If/else node '{node.id}' must have exactly one outgoing edge per branch, "
+                        "plus one from the 'else' handle"
+                    )
+            if node.type == "sticky_note":
+                text = node.data.get("text", "")
+                if not isinstance(text, str):
+                    raise ValueError(f"Sticky note '{node.id}' text must be a string")
 
         # A condition branch that bypasses the agent and lands directly on an
         # end node needs a canned message — otherwise that path silently
@@ -104,6 +149,25 @@ class WorkflowGraph(BaseModel):
                         f"End node '{edge.target}' is reached directly from a condition "
                         "branch and needs a non-empty message"
                     )
+
+        # If/else nodes only make sense downstream of the agent (they route on
+        # its final answer) — only the agent or another if/else node may lead
+        # into one, and its branches may only lead to an end or another if/else.
+        for edge in self.edges:
+            source_type = by_id[edge.source].type
+            target_type = by_id[edge.target].type
+            if target_type == "if_else" and source_type not in ("agent", "if_else"):
+                raise ValueError(
+                    f"Edge '{edge.id}' leads into if/else node '{edge.target}', but only the "
+                    "agent node or another if/else node may lead into an if/else node"
+                )
+            if source_type == "if_else" and target_type not in ("end", "if_else"):
+                raise ValueError(
+                    f"If/else node '{edge.source}' must route each branch to an end node or "
+                    "another if/else node"
+                )
+            if source_type == "sticky_note" or target_type == "sticky_note":
+                raise ValueError("Sticky notes are decorative and cannot be wired into the graph")
 
         return self
 

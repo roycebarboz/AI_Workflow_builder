@@ -13,15 +13,14 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import { createWorkflow, listTools, updateWorkflow } from "../api/workflows";
 import {
-  AGENT_NODE_ID,
-  END_NODE_ID,
   START_NODE_ID,
   agentDataOf,
   defaultDataFor,
   defaultGraph,
+  newBranchId,
   newNodeId,
 } from "../lib/defaultGraph";
-import type { GraphNode, GraphNodeType, ToolInfo, Workflow } from "../types";
+import type { GraphNode, GraphNodeType, IfElseBranch, ToolInfo, Workflow } from "../types";
 import { nodeTypes } from "./canvas/GraphNodes";
 import {
   AgentIcon,
@@ -31,8 +30,9 @@ import {
   EditIcon,
   EmptyPanelIcon,
   EndIcon,
+  IfElseIcon,
   RunIcon,
-  StartIcon,
+  StickyNoteIcon,
   toolIcon,
 } from "./canvas/icons";
 import { RunPanel } from "./canvas/RunPanel";
@@ -48,12 +48,29 @@ function stringField(data: Record<string, unknown>, key: string): string {
   return typeof data[key] === "string" ? (data[key] as string) : "";
 }
 
+function branchesField(data: Record<string, unknown>): IfElseBranch[] {
+  const raw = data.branches;
+  if (!Array.isArray(raw)) return [];
+  return raw.map((b) => ({
+    id: typeof b?.id === "string" ? b.id : newBranchId(),
+    label: typeof b?.label === "string" ? b.label : "",
+    keyword: typeof b?.keyword === "string" ? b.keyword : "",
+  }));
+}
+
 function initialNodeData(node: GraphNode): Record<string, unknown> {
   if (node.type === "condition") {
     return { keyword: stringField(node.data, "keyword") };
   }
   if (node.type === "end") {
     return { message: stringField(node.data, "message") };
+  }
+  if (node.type === "if_else") {
+    const branches = branchesField(node.data);
+    return { branches: branches.length ? branches : [{ id: newBranchId(), label: "If", keyword: "" }] };
+  }
+  if (node.type === "sticky_note") {
+    return { text: stringField(node.data, "text") };
   }
   return {};
 }
@@ -106,7 +123,7 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
       type: n.type,
       position: n.position,
       data: initialNodeData(n),
-      deletable: n.id !== START_NODE_ID && n.id !== AGENT_NODE_ID && n.id !== END_NODE_ID,
+      deletable: n.id !== START_NODE_ID,
     }))
   );
   const [edges, setEdges, onEdgesChange] = useEdgesState(
@@ -152,6 +169,52 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
     setSelectedNodeId(null);
   }
 
+  function addBranch(nodeId: string) {
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === nodeId
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                branches: [
+                  ...branchesField(n.data),
+                  { id: newBranchId(), label: "Else if", keyword: "" },
+                ],
+              },
+            }
+          : n
+      )
+    );
+  }
+
+  function updateBranch(nodeId: string, branchId: string, patch: Partial<IfElseBranch>) {
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === nodeId
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                branches: branchesField(n.data).map((b) => (b.id === branchId ? { ...b, ...patch } : b)),
+              },
+            }
+          : n
+      )
+    );
+  }
+
+  function removeBranch(nodeId: string, branchId: string) {
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === nodeId
+          ? { ...n, data: { ...n.data, branches: branchesField(n.data).filter((b) => b.id !== branchId) } }
+          : n
+      )
+    );
+    setEdges((eds) => eds.filter((e) => !(e.source === nodeId && e.sourceHandle === branchId)));
+  }
+
   const onConnect = useCallback(
     (connection: Connection) => {
       setEdges((eds) => addEdge({ ...connection, type: "smoothstep" }, eds));
@@ -186,7 +249,12 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
       const sourceNode = nodes.find((n) => n.id === source);
       const targetNode = nodes.find((n) => n.id === target);
       if (!sourceNode || !targetNode) return false;
-      if (sourceNode.type === "agent" && targetNode.type !== "end") return false;
+      if (sourceNode.type === "agent" && targetNode.type !== "end" && targetNode.type !== "if_else")
+        return false;
+      if (sourceNode.type === "if_else" && targetNode.type !== "end" && targetNode.type !== "if_else")
+        return false;
+      if (targetNode.type === "if_else" && sourceNode.type !== "agent" && sourceNode.type !== "if_else")
+        return false;
       if (sourceNode.type === "start" && targetNode.type === "end") return false;
       const handleKey = sourceHandle ?? null;
       const alreadyWired = edges.some(
@@ -242,13 +310,23 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
         graph: {
           nodes: nodes.map((n) => {
             let data: Record<string, unknown> = {};
-            if (n.id === AGENT_NODE_ID) {
+            if (n.type === "agent") {
               data = { system_prompt: systemPrompt, enabled_tools: Array.from(enabledTools) };
             } else if (n.type === "condition") {
               data = { keyword: stringField(n.data, "keyword") };
             } else if (n.type === "end") {
               const message = stringField(n.data, "message").trim();
               data = message ? { message } : {};
+            } else if (n.type === "if_else") {
+              data = {
+                branches: branchesField(n.data).map((b) => ({
+                  id: b.id,
+                  label: b.label.trim(),
+                  keyword: b.keyword.trim(),
+                })),
+              };
+            } else if (n.type === "sticky_note") {
+              data = { text: stringField(n.data, "text") };
             }
             return {
               id: n.id,
@@ -336,13 +414,12 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
       <div className="main">
         <div className="sidebar">
           <h4>Nodes</h4>
-          <div className="palette-item">
-            <span className="pal-icon start">
-              <StartIcon />
-            </span>
-            Start
-          </div>
-          <div className="palette-item">
+          <div
+            className="palette-item draggable"
+            draggable
+            onDragStart={(e) => onPaletteDragStart(e, "agent")}
+            title="Drag onto the canvas"
+          >
             <span className="pal-icon agent">
               <AgentIcon />
             </span>
@@ -362,6 +439,17 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
           <div
             className="palette-item draggable"
             draggable
+            onDragStart={(e) => onPaletteDragStart(e, "if_else")}
+            title="Drag onto the canvas"
+          >
+            <span className="pal-icon if-else">
+              <IfElseIcon />
+            </span>
+            If / else
+          </div>
+          <div
+            className="palette-item draggable"
+            draggable
             onDragStart={(e) => onPaletteDragStart(e, "end")}
             title="Drag onto the canvas"
           >
@@ -369,6 +457,17 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
               <EndIcon />
             </span>
             End
+          </div>
+          <div
+            className="palette-item draggable"
+            draggable
+            onDragStart={(e) => onPaletteDragStart(e, "sticky_note")}
+            title="Drag onto the canvas"
+          >
+            <span className="pal-icon sticky-note">
+              <StickyNoteIcon />
+            </span>
+            Sticky note
           </div>
         </div>
 
@@ -425,11 +524,12 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
               </PanelShell>
             )}
 
-            {selectedNodeId === AGENT_NODE_ID && (
+            {selectedNode?.type === "agent" && (
               <PanelShell
                 title="Agent"
                 desc="System prompt and tools. The agent decides which enabled tools to call, looping until it produces a final answer."
                 onClose={() => setSelectedNodeId(null)}
+                onDelete={() => deleteNode(selectedNode.id)}
               >
                 <div className="field">
                   <div className="field-label">System prompt</div>
@@ -490,12 +590,84 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
               </PanelShell>
             )}
 
+            {selectedNode?.type === "if_else" && (
+              <PanelShell
+                title="If / else"
+                desc="Checks the agent's final answer against each branch's keyword, in order, and routes down the first match. Anything unmatched falls through to Else."
+                onClose={() => setSelectedNodeId(null)}
+                onDelete={() => deleteNode(selectedNode.id)}
+              >
+                {branchesField(selectedNode.data).map((branch, i) => {
+                  const branches = branchesField(selectedNode.data);
+                  return (
+                    <div className="branch-row" key={branch.id}>
+                      <div className="branch-row-head">
+                        <span className="branch-row-tag">{i === 0 ? "If" : "Else if"}</span>
+                        {branches.length > 1 && (
+                          <button
+                            type="button"
+                            className="branch-remove"
+                            onClick={() => removeBranch(selectedNode.id, branch.id)}
+                            aria-label="Remove branch"
+                          >
+                            <CloseIcon />
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        className="text-input"
+                        value={branch.label}
+                        onChange={(e) => updateBranch(selectedNode.id, branch.id, { label: e.target.value })}
+                        placeholder="Label, e.g. Billing"
+                      />
+                      <input
+                        className="text-input"
+                        value={branch.keyword}
+                        onChange={(e) => updateBranch(selectedNode.id, branch.id, { keyword: e.target.value })}
+                        placeholder="Keyword to match in the agent's answer"
+                      />
+                    </div>
+                  );
+                })}
+                <button
+                  type="button"
+                  className="btn-secondary add-branch-btn"
+                  onClick={() => addBranch(selectedNode.id)}
+                >
+                  + Add
+                </button>
+                <p className="info-note">
+                  Wire each branch's handle to where matching answers should go. The <b>Else</b>{" "}
+                  handle always exists and catches anything that doesn't match.
+                </p>
+              </PanelShell>
+            )}
+
+            {selectedNode?.type === "sticky_note" && (
+              <PanelShell
+                title="Sticky note"
+                desc="A comment on the canvas for anyone viewing this workflow. It has no effect on how the workflow runs."
+                onClose={() => setSelectedNodeId(null)}
+                onDelete={() => deleteNode(selectedNode.id)}
+              >
+                <div className="field">
+                  <div className="field-label">Note</div>
+                  <textarea
+                    className="ta"
+                    value={stringField(selectedNode.data, "text")}
+                    onChange={(e) => updateNodeData(selectedNode.id, { text: e.target.value })}
+                    placeholder="Leave a comment for anyone else editing this workflow…"
+                  />
+                </div>
+              </PanelShell>
+            )}
+
             {selectedNode?.type === "end" && (
               <PanelShell
                 title="End"
                 desc="Terminal node."
                 onClose={() => setSelectedNodeId(null)}
-                onDelete={selectedNode.id !== END_NODE_ID ? () => deleteNode(selectedNode.id) : undefined}
+                onDelete={() => deleteNode(selectedNode.id)}
               >
                 <p className="info-note">
                   When this path is reached after the agent, the run finishes and the agent's

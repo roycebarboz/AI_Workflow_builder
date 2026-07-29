@@ -5,6 +5,7 @@ in-memory, see conftest.py) — no mocking below the TestClient boundary.
 from __future__ import annotations
 
 from .factories import branching_workflow_graph as _branch_graph
+from .factories import if_else_workflow_graph as _if_else_graph
 from .factories import workflow_graph as _graph
 
 
@@ -167,6 +168,97 @@ def test_create_workflow_rejects_agent_edge_to_condition(client):
             edge["target"] = "cond2"
     graph["edges"].append({"id": "cond2-a", "source": "cond2", "target": "end", "sourceHandle": "true"})
     graph["edges"].append({"id": "cond2-b", "source": "cond2", "target": "end", "sourceHandle": "false"})
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+_BRANCHES = [{"id": "billing", "label": "Billing", "keyword": "billing"}]
+
+
+def test_create_workflow_accepts_if_else_graph(client):
+    response = client.post(
+        "/workflows",
+        json={"name": "Triage", "graph": _if_else_graph(_BRANCHES)},
+    )
+    assert response.status_code == 201
+    nodes = response.json()["graph"]["nodes"]
+    assert any(n["type"] == "if_else" for n in nodes)
+
+
+def test_create_workflow_rejects_if_else_without_branches(client):
+    graph = _if_else_graph(_BRANCHES)
+    for node in graph["nodes"]:
+        if node["type"] == "if_else":
+            node["data"] = {"branches": []}
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+def test_create_workflow_rejects_if_else_branch_missing_keyword(client):
+    graph = _if_else_graph([{"id": "billing", "label": "Billing", "keyword": ""}])
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+def test_create_workflow_rejects_if_else_duplicate_branch_ids(client):
+    graph = _if_else_graph(
+        [
+            {"id": "billing", "label": "Billing", "keyword": "billing"},
+            {"id": "billing", "label": "Billing again", "keyword": "invoice"},
+        ]
+    )
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+def test_create_workflow_rejects_if_else_reserved_else_id(client):
+    graph = _if_else_graph([{"id": "else", "label": "Bad", "keyword": "x"}])
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+def test_create_workflow_rejects_if_else_missing_else_edge(client):
+    graph = _if_else_graph(_BRANCHES)
+    graph["edges"] = [e for e in graph["edges"] if e["id"] != "ifelse-else"]
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+def test_create_workflow_rejects_start_edge_to_if_else(client):
+    graph = _if_else_graph(_BRANCHES)
+    for edge in graph["edges"]:
+        if edge["id"] == "start-agent":
+            edge["target"] = "ifelse"
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+def test_create_workflow_rejects_if_else_branch_to_agent(client):
+    graph = _if_else_graph(_BRANCHES)
+    for edge in graph["edges"]:
+        if edge["id"] == "ifelse-billing":
+            edge["target"] = "agent"
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+def test_create_workflow_accepts_sticky_note(client):
+    graph = _graph("You are a helpful assistant.")
+    graph["nodes"].append(
+        {"id": "note1", "type": "sticky_note", "position": {"x": 0, "y": 300}, "data": {"text": "Remember to..."}}
+    )
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 201
+    nodes = response.json()["graph"]["nodes"]
+    assert any(n["type"] == "sticky_note" and n["data"]["text"] == "Remember to..." for n in nodes)
+
+
+def test_create_workflow_rejects_sticky_note_wired_into_graph(client):
+    graph = _graph("You are a helpful assistant.")
+    graph["nodes"].append(
+        {"id": "note1", "type": "sticky_note", "position": {"x": 0, "y": 300}, "data": {"text": "Note"}}
+    )
+    graph["edges"].append({"id": "note-agent", "source": "note1", "target": "agent"})
     response = client.post("/workflows", json={"name": "A", "graph": graph})
     assert response.status_code == 422
 

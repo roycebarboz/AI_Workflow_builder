@@ -1,4 +1,4 @@
-export type GraphNodeType = "start" | "agent" | "condition" | "end";
+export type GraphNodeType = "start" | "agent" | "condition" | "end" | "if_else" | "sticky_note";
 
 export interface GraphPosition {
   x: number;
@@ -16,6 +16,20 @@ export interface ConditionNodeData {
 
 export interface EndNodeData {
   message?: string;
+}
+
+export interface IfElseBranch {
+  id: string;
+  label: string;
+  keyword: string;
+}
+
+export interface IfElseNodeData {
+  branches: IfElseBranch[];
+}
+
+export interface StickyNoteNodeData {
+  text: string;
 }
 
 export interface GraphNode {

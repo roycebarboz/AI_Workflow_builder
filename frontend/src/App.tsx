@@ -32,6 +32,7 @@ function App() {
       <div className="app">
         <Chat
           workflowId={view.workflow.id}
+          workflowVersionId={view.workflow.current_version_id}
           workflowName={view.workflow.name}
           onBack={() => setView({ name: "list" })}
         />

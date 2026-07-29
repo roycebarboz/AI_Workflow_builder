@@ -25,15 +25,23 @@ function parseBlock(block: string): ChatSSEEvent | null {
   }
 }
 
-/** Streams a chat turn, yielding one normalized SSE event at a time. */
+/** Streams a chat turn, yielding one normalized SSE event at a time.
+ * `workflowVersionId` pins the run to the WorkflowVersion active when the
+ * conversation started, so a later edit to the workflow can't retroactively
+ * change turns already in flight (see useAgentChat). */
 export async function* streamChat(
   workflowId: string,
+  workflowVersionId: string,
   messages: ChatMessage[]
 ): AsyncGenerator<ChatSSEEvent> {
   const response = await fetch(`${API_BASE_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ workflow_id: workflowId, messages }),
+    body: JSON.stringify({
+      workflow_id: workflowId,
+      workflow_version_id: workflowVersionId,
+      messages,
+    }),
   });
 
   if (!response.ok || !response.body) {

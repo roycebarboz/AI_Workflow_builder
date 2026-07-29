@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { streamChat } from "../api/chat";
 import type {
   AgentStep,
@@ -19,8 +19,15 @@ export interface Turn {
 
 /** Drives one workflow's chat turns against the SSE /chat endpoint. Shared
  * by the standalone Chat page and the workflow editor's Run/Preview panel
- * so both render off the same event state machine. */
-export function useAgentChat(workflowId: string) {
+ * so both render off the same event state machine.
+ *
+ * `workflowVersionId` pins every turn of this run to the version active
+ * when the hook first mounts — captured once into a ref rather than read
+ * live off the prop, so a parent re-render with a newer `current_version_id`
+ * (e.g. after a save elsewhere) can never retroactively move an in-flight
+ * conversation onto a different version. */
+export function useAgentChat(workflowId: string, workflowVersionId: string) {
+  const pinnedVersionId = useRef(workflowVersionId).current;
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -60,7 +67,7 @@ export function useAgentChat(workflowId: string) {
     };
 
     try {
-      for await (const { event, data } of streamChat(workflowId, history)) {
+      for await (const { event, data } of streamChat(workflowId, pinnedVersionId, history)) {
         if (event === "token") {
           const { text: delta } = data as TokenEventData;
           updateLastTurn((t) => ({ ...t, assistantText: t.assistantText + delta }));

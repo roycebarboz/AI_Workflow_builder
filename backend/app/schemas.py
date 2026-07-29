@@ -132,6 +132,7 @@ class WorkflowOut(BaseModel):
     graph: WorkflowGraph
     system_prompt: str
     enabled_tools: list[str]
+    current_version_id: str
     created_at: datetime
     updated_at: datetime
 

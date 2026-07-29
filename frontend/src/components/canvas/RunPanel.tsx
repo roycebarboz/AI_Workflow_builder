@@ -4,6 +4,7 @@ import { AgentIcon, ChevronIcon, EditIcon, EndIcon, SendIcon, StartIcon } from "
 
 interface RunPanelProps {
   workflowId: string;
+  workflowVersionId: string;
 }
 
 function TraceRow({
@@ -36,8 +37,11 @@ function TraceRow({
   );
 }
 
-export function RunPanel({ workflowId }: RunPanelProps) {
-  const { turns, input, setInput, sendMessage, isSending, reset } = useAgentChat(workflowId);
+export function RunPanel({ workflowId, workflowVersionId }: RunPanelProps) {
+  const { turns, input, setInput, sendMessage, isSending, reset } = useAgentChat(
+    workflowId,
+    workflowVersionId
+  );
 
   return (
     <div className="run-panel">

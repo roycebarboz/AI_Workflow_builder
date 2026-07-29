@@ -486,7 +486,13 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
             )}
           </div>
         ) : (
-          currentWorkflow && <RunPanel key={currentWorkflow.id} workflowId={currentWorkflow.id} />
+          currentWorkflow && (
+            <RunPanel
+              key={currentWorkflow.id}
+              workflowId={currentWorkflow.id}
+              workflowVersionId={currentWorkflow.current_version_id}
+            />
+          )
         )}
       </div>
     </div>

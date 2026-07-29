@@ -24,7 +24,7 @@ from .agent import (
 )
 from .db import get_db
 from .llm import LLMClient, OpenAILLMClient
-from .workflows_api import get_workflow_or_404
+from .workflows_api import get_workflow_or_404, get_workflow_version_or_404
 from .workflows_api import router as workflows_router
 
 app = FastAPI(title="AI Workflow Builder — backend")
@@ -51,6 +51,12 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     workflow_id: str
+    # Pins the run to the WorkflowVersion active when the chat started; the
+    # frontend captures this once per conversation (see useAgentChat) and
+    # resends it on every turn so a later workflow edit can't retroactively
+    # change an in-flight run. Omitted, it falls back to the workflow's
+    # current version — used by callers that don't pin (e.g. tests).
+    workflow_version_id: str | None = None
     messages: list[ChatMessage] = Field(min_length=1)
 
 
@@ -81,11 +87,12 @@ def chat(
     db: Session = Depends(get_db),
 ):
     workflow = get_workflow_or_404(request.workflow_id, db)
+    version = get_workflow_version_or_404(workflow, request.workflow_version_id, db)
 
     history = [m.model_dump() for m in request.messages]
 
     def event_stream():
-        for event in run_agent_loop(llm_client, workflow.graph, history):
+        for event in run_agent_loop(llm_client, version.graph, history):
             yield _to_sse(event)
 
     return EventSourceResponse(event_stream())

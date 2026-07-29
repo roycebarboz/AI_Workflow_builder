@@ -43,6 +43,7 @@ export interface Workflow {
   graph: WorkflowGraph;
   system_prompt: string;
   enabled_tools: string[];
+  current_version_id: string;
   created_at: string;
   updated_at: string;
 }

@@ -25,6 +25,7 @@ def test_create_workflow(client):
     assert "id" in body
     assert "created_at" in body
     assert "updated_at" in body
+    assert body["current_version_id"]
 
 
 def test_create_workflow_rejects_unknown_tool(client):
@@ -91,6 +92,23 @@ def test_update_workflow(client):
 
     refetched = client.get(f"/workflows/{created['id']}").json()
     assert refetched == body
+
+
+def test_update_workflow_creates_new_immutable_version(client):
+    """Each save creates a new WorkflowVersion and moves current_version_id
+    forward — it never overwrites the previous version in place."""
+    created = client.post(
+        "/workflows", json={"name": "A", "graph": _graph("old prompt")}
+    ).json()
+    original_version_id = created["current_version_id"]
+
+    updated = client.put(
+        f"/workflows/{created['id']}",
+        json={"name": "A", "graph": _graph("new prompt")},
+    ).json()
+
+    assert updated["current_version_id"] != original_version_id
+    assert updated["system_prompt"] == "new prompt"
 
 
 def test_update_workflow_missing_returns_404(client):

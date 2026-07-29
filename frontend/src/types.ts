@@ -85,3 +85,30 @@ export interface FinalResponseEventData {
 export interface ErrorEventData {
   message: string;
 }
+
+export type ExecutionStatus = "running" | "completed" | "error";
+
+export interface ExecutionTranscriptMessage {
+  role: string;
+  content: string | null;
+}
+
+export interface ExecutionToolCall {
+  name: string;
+  arguments: unknown;
+  result: string | null;
+}
+
+export interface ExecutionSummary {
+  id: string;
+  workflow_version_id: string;
+  started_at: string;
+  status: ExecutionStatus;
+  final_response: string | null;
+}
+
+export interface ExecutionDetail extends ExecutionSummary {
+  transcript: ExecutionTranscriptMessage[];
+  tool_calls: ExecutionToolCall[];
+  error_message: string | null;
+}

@@ -140,3 +140,33 @@ class WorkflowOut(BaseModel):
 class ToolInfo(BaseModel):
     name: str
     description: str
+
+
+class ExecutionTranscriptMessage(BaseModel):
+    role: str
+    content: str | None = None
+
+
+class ExecutionToolCall(BaseModel):
+    name: str
+    arguments: dict
+    result: str | None = None
+
+
+ExecutionStatus = Literal["running", "completed", "error"]
+
+
+class ExecutionSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workflow_version_id: str
+    started_at: datetime
+    status: ExecutionStatus
+    final_response: str | None
+
+
+class ExecutionDetail(ExecutionSummary):
+    transcript: list[ExecutionTranscriptMessage]
+    tool_calls: list[ExecutionToolCall]
+    error_message: str | None

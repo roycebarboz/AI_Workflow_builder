@@ -51,3 +51,23 @@ class WorkflowVersion(Base):
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
     enabled_tools: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ExecutionRecord(Base):
+    """One chat run, pinned to the WorkflowVersion active when it started.
+    Written incrementally as the run progresses (see app.executions) so a
+    run that errors or is interrupted mid-stream still leaves a visible
+    history entry rather than only appearing on clean completion."""
+
+    __tablename__ = "execution_records"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    workflow_version_id: Mapped[str] = mapped_column(
+        String, ForeignKey("workflow_versions.id"), nullable=False
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    transcript: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    tool_calls: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    final_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="running")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

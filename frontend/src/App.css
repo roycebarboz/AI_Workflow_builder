@@ -253,6 +253,11 @@
   color: var(--text-3);
 }
 
+.card-foot-actions {
+  display: flex;
+  gap: 8px;
+}
+
 /* ============ FORM ============ */
 .form-panel {
   display: flex;
@@ -456,6 +461,95 @@
   cursor: not-allowed;
 }
 
+/* ============ EXECUTION HISTORY ============ */
+.history-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  cursor: pointer;
+}
+
+.history-item:hover {
+  border-color: #3d3d46;
+}
+
+.history-item.active {
+  border-color: var(--blue);
+}
+
+.history-item-time {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.history-item-preview {
+  font-size: 12.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.history-detail {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 200px;
+}
+
+.history-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 4px 9px;
+  border-radius: 20px;
+  flex-shrink: 0;
+}
+
+.status-badge.status-completed {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.status-badge.status-running {
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+
+.status-badge.status-error {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
 /* ---------- responsive ---------- */
 @media (max-width: 560px) {
   .main {
@@ -463,6 +557,9 @@
   }
   .page-head {
     flex-direction: column;
+  }
+  .history-layout {
+    grid-template-columns: 1fr;
   }
   .btn-primary {
     align-self: flex-start;

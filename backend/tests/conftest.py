@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.db import Base, get_db
+from app.db import Base, get_db, get_session_factory
 from app.main import app
 
 
@@ -37,8 +37,10 @@ def client():
             db.close()
 
     app.dependency_overrides[get_db] = _get_db
+    app.dependency_overrides[get_session_factory] = lambda: TestingSessionLocal
     try:
         yield TestClient(app)
     finally:
         app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_session_factory, None)
         engine.dispose()

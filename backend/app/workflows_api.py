@@ -4,8 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import Workflow, WorkflowVersion
-from .schemas import ToolInfo, WorkflowCreate, WorkflowGraph, WorkflowOut, WorkflowUpdate, agent_node_data
+from .models import ExecutionRecord, Workflow, WorkflowVersion
+from .schemas import (
+    ExecutionDetail,
+    ExecutionSummary,
+    ToolInfo,
+    WorkflowCreate,
+    WorkflowGraph,
+    WorkflowOut,
+    WorkflowUpdate,
+    agent_node_data,
+)
 from .tools.registry import TOOLS
 
 router = APIRouter()
@@ -85,6 +94,35 @@ def update_workflow(
     db.commit()
     db.refresh(workflow)
     return workflow
+
+
+def _executions_for_workflow(workflow_id: str, db: Session):
+    """Executions pin to a WorkflowVersion, not a Workflow, so scoping to a
+    workflow always goes through this join."""
+    return (
+        db.query(ExecutionRecord)
+        .join(WorkflowVersion, ExecutionRecord.workflow_version_id == WorkflowVersion.id)
+        .filter(WorkflowVersion.workflow_id == workflow_id)
+    )
+
+
+@router.get("/workflows/{workflow_id}/executions", response_model=list[ExecutionSummary])
+def list_executions(workflow_id: str, db: Session = Depends(get_db)) -> list[ExecutionRecord]:
+    get_workflow_or_404(workflow_id, db)
+    return _executions_for_workflow(workflow_id, db).order_by(ExecutionRecord.started_at.desc()).all()
+
+
+@router.get("/workflows/{workflow_id}/executions/{execution_id}", response_model=ExecutionDetail)
+def get_execution(workflow_id: str, execution_id: str, db: Session = Depends(get_db)) -> ExecutionRecord:
+    """workflow_id scopes the lookup so a valid execution id from a
+    *different* workflow still 404s, even though `WorkflowVersion` rows
+    outlive workflow edits (see ticket 06) and could otherwise be reached
+    from any workflow's URL."""
+    get_workflow_or_404(workflow_id, db)
+    execution = _executions_for_workflow(workflow_id, db).filter(ExecutionRecord.id == execution_id).first()
+    if execution is None:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    return execution
 
 
 @router.get("/tools", response_model=list[ToolInfo])

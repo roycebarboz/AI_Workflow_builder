@@ -27,3 +27,13 @@ def get_db() -> Iterator[Session]:
         yield db
     finally:
         db.close()
+
+
+def get_session_factory() -> sessionmaker[Session]:
+    """A session *factory* rather than a request-scoped session, for callers
+    that need to open/close their own session on a lifetime that outlives a
+    single dependency-injected `db` — e.g. a streaming SSE response, whose
+    generator body runs after FastAPI has already closed the request's
+    `Depends(get_db)` session (dependency cleanup happens before the
+    response body streams)."""
+    return SessionLocal

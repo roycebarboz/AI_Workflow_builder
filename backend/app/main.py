@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from sse_starlette.sse import EventSourceResponse
 
 load_dotenv()
@@ -22,7 +22,8 @@ from .agent import (
     TokenEvent,
     run_agent_loop,
 )
-from .db import get_db
+from .db import get_db, get_session_factory
+from .executions import ExecutionRecorder
 from .llm import LLMClient, OpenAILLMClient
 from .workflows_api import get_workflow_or_404, get_workflow_version_or_404
 from .workflows_api import router as workflows_router
@@ -85,15 +86,21 @@ def chat(
     request: ChatRequest,
     llm_client: LLMClient = Depends(get_llm_client),
     db: Session = Depends(get_db),
+    session_factory: sessionmaker[Session] = Depends(get_session_factory),
 ):
     workflow = get_workflow_or_404(request.workflow_id, db)
     version = get_workflow_version_or_404(workflow, request.workflow_version_id, db)
 
     history = [m.model_dump() for m in request.messages]
+    graph = version.graph
+    workflow_version_id = version.id
 
     def event_stream():
-        for event in run_agent_loop(llm_client, version.graph, history):
-            yield _to_sse(event)
+        with session_factory() as exec_db:
+            recorder = ExecutionRecorder(exec_db, workflow_version_id, history)
+            for event in run_agent_loop(llm_client, graph, history):
+                recorder.on_event(event)
+                yield _to_sse(event)
 
     return EventSourceResponse(event_stream())
 

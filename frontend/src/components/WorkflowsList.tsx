@@ -7,10 +7,11 @@ interface WorkflowsListProps {
   onNew: () => void;
   onEdit: (workflow: Workflow) => void;
   onChat: (workflow: Workflow) => void;
+  onHistory: (workflow: Workflow) => void;
   refreshKey: number;
 }
 
-export function WorkflowsList({ onNew, onEdit, onChat, refreshKey }: WorkflowsListProps) {
+export function WorkflowsList({ onNew, onEdit, onChat, onHistory, refreshKey }: WorkflowsListProps) {
   const [workflows, setWorkflows] = useState<Workflow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,16 +95,28 @@ export function WorkflowsList({ onNew, onEdit, onChat, refreshKey }: WorkflowsLi
               </div>
               <div className="card-foot">
                 <span className="edited">Edited {relativeTime(workflow.updated_at)}</span>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onChat(workflow);
-                  }}
-                >
-                  Chat
-                </button>
+                <div className="card-foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onHistory(workflow);
+                    }}
+                  >
+                    History
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChat(workflow);
+                    }}
+                  >
+                    Chat
+                  </button>
+                </div>
               </div>
             </article>
           ))}

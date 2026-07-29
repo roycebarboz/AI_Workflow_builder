@@ -22,12 +22,22 @@ export function EndIcon() {
   );
 }
 
-export function ConditionIcon() {
+export function IfElseIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M6 4v6c0 3 3 4 6 4s6 1 6 4v2" />
-      <circle cx="6" cy="4" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="18" cy="20" r="1.6" fill="currentColor" stroke="none" />
+      <path d="M4 12h4l3-7h4" />
+      <path d="M11 12h4l3 7h2" />
+      <path d="M11 12h9" />
+    </svg>
+  );
+}
+
+export function StickyNoteIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 4h13l3 3v13H4z" />
+      <path d="M17 4v3h3" />
+      <path d="M8 11h8M8 15h5" />
     </svg>
   );
 }

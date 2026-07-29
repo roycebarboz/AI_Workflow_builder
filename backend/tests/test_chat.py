@@ -17,12 +17,15 @@ from .factories import workflow_graph
 
 
 class FakeLLMClient:
-    """Replays a scripted list of turns, one list of events per call to stream_chat."""
+    """Replays a scripted list of turns, one list of events per call to
+    stream_chat, and records each call's messages/tools for inspection."""
 
     def __init__(self, turns: list[list]) -> None:
         self._turns = list(turns)
+        self.calls: list[dict] = []
 
-    def stream_chat(self, messages, tools):
+    def stream_chat(self, messages, tools, *, response_format=None):
+        self.calls.append({"messages": messages, "tools": tools, "response_format": response_format})
         return iter(self._turns.pop(0))
 
 
@@ -31,6 +34,15 @@ def _override_with(turns: list[list]):
         return FakeLLMClient(turns)
 
     return _get
+
+
+def _install_llm_override(turns: list[list]) -> FakeLLMClient:
+    """Registers a FakeLLMClient as the get_llm_client override and returns
+    it directly, so callers that need to inspect what the agent loop sent
+    (messages, tools) don't have to dig it back out of the override closure."""
+    client = FakeLLMClient(turns)
+    app.dependency_overrides[get_llm_client] = lambda: client
+    return client
 
 
 def _create_workflow(client) -> str:
@@ -43,6 +55,18 @@ def _create_workflow(client) -> str:
     response = client.post("/workflows", json=payload)
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def _create_workflow_full(client) -> dict:
+    payload = {
+        "name": "Test workflow",
+        "graph": workflow_graph(
+            "You are a helpful assistant with access to a calculator tool.", ["calculator"]
+        ),
+    }
+    response = client.post("/workflows", json=payload)
+    assert response.status_code == 201
+    return response.json()
 
 
 def _parse_sse(body: str) -> list[tuple[str, dict]]:
@@ -80,7 +104,7 @@ def test_chat_direct_answer_no_tool_call(client):
 
     events = _parse_sse(body)
     assert [e[0] for e in events] == ["token", "token", "final_response"]
-    assert events[-1][1] == {"text": "Hello!"}
+    assert events[-1][1] == {"text": "Hello!", "agent_name": "Agent"}
 
 
 def test_chat_with_tool_call(client):
@@ -114,9 +138,65 @@ def test_chat_with_tool_call(client):
         "token",
         "final_response",
     ]
-    assert events[0][1] == {"name": "calculator", "arguments": {"expression": "2 + 2"}}
-    assert events[1][1] == {"name": "calculator", "result": "4"}
-    assert events[-1][1] == {"text": "4"}
+    assert events[0][1] == {
+        "name": "calculator",
+        "arguments": {"expression": "2 + 2"},
+        "agent_name": "Agent",
+    }
+    assert events[1][1] == {"name": "calculator", "result": "4", "agent_name": "Agent"}
+    assert events[-1][1] == {"text": "4", "agent_name": "Agent"}
+
+
+def test_chat_with_send_email_tool(client):
+    """End-to-end check that a newly-registered tool is wired into the
+    registry, the /tools endpoint, and the agent tool-call loop without
+    any agent loop/graph engine changes — mirrors test_chat_with_tool_call."""
+    payload = {
+        "name": "Email workflow",
+        "graph": workflow_graph(
+            "You are a helpful assistant with access to an email tool.", ["send_email"]
+        ),
+    }
+    workflow_id = client.post("/workflows", json=payload).json()["id"]
+
+    tool_names = [t["name"] for t in client.get("/tools").json()]
+    assert "send_email" in tool_names
+
+    turns = [
+        [
+            ToolCallRequest(
+                id="call_1",
+                name="send_email",
+                arguments='{"to": "a@example.com", "subject": "Hi", "body": "Hello"}',
+            ),
+            StreamDone(finish_reason="tool_calls"),
+        ],
+        [ContentDelta(text="Sent!"), StreamDone(finish_reason="stop")],
+    ]
+    app.dependency_overrides[get_llm_client] = _override_with(turns)
+    try:
+        with client.stream(
+            "POST",
+            "/chat",
+            json={"workflow_id": workflow_id, "messages": [{"role": "user", "content": "email a@example.com"}]},
+        ) as response:
+            assert response.status_code == 200
+            body = "".join(response.iter_text())
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
+    events = _parse_sse(body)
+    assert [e[0] for e in events] == [
+        "tool_call_start",
+        "tool_call_result",
+        "token",
+        "final_response",
+    ]
+    assert events[1][1] == {
+        "name": "send_email",
+        "result": "Mock email sent to a@example.com (subject: 'Hi')",
+        "agent_name": "Agent",
+    }
 
 
 def test_chat_surfaces_tool_failure_as_error_event(client, monkeypatch):
@@ -149,7 +229,7 @@ def test_chat_surfaces_tool_failure_as_error_event(client, monkeypatch):
 
     events = _parse_sse(body)
     assert [e[0] for e in events] == ["tool_call_start", "error"]
-    assert events[1][1] == {"message": "Tool 'calculator' failed: kaboom"}
+    assert events[1][1] == {"message": "Tool 'calculator' failed: kaboom", "agent_name": "Agent"}
 
 
 def test_chat_rejects_empty_messages(client):
@@ -171,4 +251,107 @@ def test_chat_rejects_unknown_workflow(client):
         )
     finally:
         app.dependency_overrides.pop(get_llm_client, None)
+    assert response.status_code == 404
+
+
+def test_chat_without_pinned_version_uses_current_version(client):
+    workflow = _create_workflow_full(client)
+    client.put(
+        f"/workflows/{workflow['id']}",
+        json={
+            "name": workflow["name"],
+            "graph": workflow_graph("Updated prompt", ["calculator"]),
+        },
+    )
+
+    turns = [[ContentDelta(text="hi"), StreamDone(finish_reason="stop")]]
+    llm_client = _install_llm_override(turns)
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "workflow_id": workflow["id"],
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
+    assert response.status_code == 200
+    sent_messages = llm_client.calls[0]["messages"]
+    assert sent_messages[0] == {"role": "system", "content": "Updated prompt"}
+
+
+def test_chat_pinned_to_version_ignores_later_workflow_edits(client):
+    workflow = _create_workflow_full(client)
+    original_version_id = workflow["current_version_id"]
+
+    client.put(
+        f"/workflows/{workflow['id']}",
+        json={
+            "name": workflow["name"],
+            "graph": workflow_graph("Updated prompt", ["calculator"]),
+        },
+    )
+
+    turns = [[ContentDelta(text="hi"), StreamDone(finish_reason="stop")]]
+    llm_client = _install_llm_override(turns)
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "workflow_id": workflow["id"],
+                "workflow_version_id": original_version_id,
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
+    assert response.status_code == 200
+    sent_messages = llm_client.calls[0]["messages"]
+    assert sent_messages[0] == {
+        "role": "system",
+        "content": "You are a helpful assistant with access to a calculator tool.",
+    }
+
+
+def test_chat_rejects_version_from_a_different_workflow(client):
+    workflow_a = _create_workflow_full(client)
+    workflow_b = _create_workflow_full(client)
+
+    turns = [[ContentDelta(text="hi"), StreamDone(finish_reason="stop")]]
+    app.dependency_overrides[get_llm_client] = _override_with(turns)
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "workflow_id": workflow_a["id"],
+                "workflow_version_id": workflow_b["current_version_id"],
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
+    assert response.status_code == 404
+
+
+def test_chat_rejects_unknown_version_id(client):
+    workflow = _create_workflow_full(client)
+
+    turns = [[ContentDelta(text="hi"), StreamDone(finish_reason="stop")]]
+    app.dependency_overrides[get_llm_client] = _override_with(turns)
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "workflow_id": workflow["id"],
+                "workflow_version_id": "does-not-exist",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
     assert response.status_code == 404

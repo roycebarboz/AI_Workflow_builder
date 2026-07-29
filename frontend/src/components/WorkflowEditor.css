@@ -207,7 +207,12 @@
   color: var(--blue);
 }
 
-.pal-icon.cond {
+.pal-icon.if-else {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.pal-icon.sticky-note {
   background: var(--orange-bg);
   color: var(--orange);
 }
@@ -309,34 +314,80 @@
   color: var(--blue);
 }
 
-.rf-node.n-condition .rf-node-icon {
-  background: var(--orange-bg);
-  color: var(--orange);
-}
-
-.rf-node.n-condition {
-  min-width: 168px;
-  padding-bottom: 26px;
-}
-
-.rf-node-branch-label {
-  position: absolute;
-  right: -34px;
-  transform: translateY(-50%);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  pointer-events: none;
-}
-
-.rf-node-branch-label.branch-true {
-  color: var(--green);
-}
-
-.rf-node-branch-label.branch-false {
+.rf-node.n-if-else .rf-node-icon {
+  background: var(--red-bg);
   color: var(--red);
+}
+
+.rf-node.n-if-else {
+  min-width: 200px;
+}
+
+.if-else-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.if-else-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--surface-3);
+  border-radius: 6px;
+  padding: 5px 10px;
+}
+
+.if-else-row .react-flow__handle {
+  right: -18px;
+}
+
+.if-else-row-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.if-else-row-label.is-else {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.rf-node.n-sticky-note {
+  background: var(--orange-bg);
+  border-color: var(--orange);
+  min-width: 180px;
+  max-width: 260px;
+}
+
+.rf-node.n-sticky-note .rf-node-icon {
+  color: var(--orange);
+  width: 18px;
+  height: 18px;
+  margin-bottom: 6px;
+}
+
+.rf-node.n-sticky-note .rf-node-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.sticky-note-text,
+.sticky-note-placeholder {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-1);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.sticky-note-placeholder {
+  color: var(--text-3);
+  font-style: italic;
 }
 
 .react-flow__handle {
@@ -566,6 +617,32 @@ textarea.ta:focus {
   gap: 8px;
 }
 
+/* two-state segmented toggle (e.g. agent output format) */
+.segmented {
+  display: inline-flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.segmented-option {
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-family: inherit;
+  padding: 6px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.segmented-option.active {
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+
 .tool-row {
   display: flex;
   align-items: center;
@@ -614,6 +691,56 @@ textarea.ta:focus {
   font-size: 12.5px;
   color: var(--text-2);
   line-height: 1.6;
+}
+
+.branch-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.branch-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.branch-row-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.branch-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--text-3);
+  border-radius: 5px;
+}
+
+.branch-remove:hover {
+  color: var(--red);
+  background: var(--red-bg);
+}
+
+.branch-remove svg {
+  width: 12px;
+  height: 12px;
+}
+
+.add-branch-btn {
+  width: 100%;
+  margin-top: 2px;
 }
 
 /* ============ RUN / TRACE PANEL ============ */

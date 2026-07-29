@@ -1,17 +1,9 @@
 import type { ToolInfo, Workflow, WorkflowGraph } from "../types";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+import { API_BASE_URL, assertOk, asJson } from "./client";
 
 export interface WorkflowInput {
   name: string;
   graph: WorkflowGraph;
-}
-
-async function asJson<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
-  return response.json() as Promise<T>;
 }
 
 export async function listWorkflows(): Promise<Workflow[]> {
@@ -40,6 +32,10 @@ export async function updateWorkflow(id: string, input: WorkflowInput): Promise<
       body: JSON.stringify(input),
     })
   );
+}
+
+export async function deleteWorkflow(id: string): Promise<void> {
+  return assertOk(await fetch(`${API_BASE_URL}/workflows/${id}`, { method: "DELETE" }));
 }
 
 export async function listTools(): Promise<ToolInfo[]> {

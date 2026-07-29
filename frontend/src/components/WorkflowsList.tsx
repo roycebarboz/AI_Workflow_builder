@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react";
-import { listWorkflows } from "../api/workflows";
+import { deleteWorkflow, listWorkflows } from "../api/workflows";
 import { relativeTime } from "../lib/relativeTime";
 import type { Workflow } from "../types";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface WorkflowsListProps {
   onNew: () => void;
   onEdit: (workflow: Workflow) => void;
   onChat: (workflow: Workflow) => void;
+  onHistory: (workflow: Workflow) => void;
   refreshKey: number;
 }
 
-export function WorkflowsList({ onNew, onEdit, onChat, refreshKey }: WorkflowsListProps) {
+export function WorkflowsList({ onNew, onEdit, onChat, onHistory, refreshKey }: WorkflowsListProps) {
   const [workflows, setWorkflows] = useState<Workflow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Workflow | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,6 +32,20 @@ export function WorkflowsList({ onNew, onEdit, onChat, refreshKey }: WorkflowsLi
     };
   }, [refreshKey]);
 
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setIsDeleting(true);
+    try {
+      await deleteWorkflow(pendingDelete.id);
+      setWorkflows((prev) => prev?.filter((w) => w.id !== pendingDelete.id) ?? prev);
+      setPendingDelete(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   return (
     <div className="app">
       <div className="topbar">
@@ -41,7 +59,7 @@ export function WorkflowsList({ onNew, onEdit, onChat, refreshKey }: WorkflowsLi
               <path d="M19 8.2V12a2 2 0 01-2 2h-1" />
             </svg>
           </span>
-          Workflow Builder
+          AI Workflow Builder
         </div>
       </div>
 
@@ -94,21 +112,54 @@ export function WorkflowsList({ onNew, onEdit, onChat, refreshKey }: WorkflowsLi
               </div>
               <div className="card-foot">
                 <span className="edited">Edited {relativeTime(workflow.updated_at)}</span>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onChat(workflow);
-                  }}
-                >
-                  Chat
-                </button>
+                <div className="card-foot-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onHistory(workflow);
+                    }}
+                  >
+                    History
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChat(workflow);
+                    }}
+                  >
+                    Chat
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPendingDelete(workflow);
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             </article>
           ))}
         </div>
       </main>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title={`Delete "${pendingDelete.name}"?`}
+          desc="This permanently deletes the workflow, its saved versions, and its chat history. This can't be undone."
+          confirmLabel="Delete"
+          isBusy={isDeleting}
+          onConfirm={() => void confirmDelete()}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }

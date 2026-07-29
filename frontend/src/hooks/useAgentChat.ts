@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { streamChat } from "../api/chat";
 import type {
   AgentStep,
@@ -10,17 +10,59 @@ import type {
   ToolCallStartEventData,
 } from "../types";
 
+/** One agent node's slice of a turn's trace — tool calls/errors it produced,
+ * grouped so the Run panel can label each section with that agent's name. */
+export interface AgentRunTrace {
+  agentName: string;
+  steps: AgentStep[];
+}
+
 export interface Turn {
   user: ChatMessage;
   steps: AgentStep[];
+  runs: AgentRunTrace[];
   assistantText: string;
   isStreaming: boolean;
 }
 
+const DEFAULT_AGENT_NAME = "Agent";
+
+/** Appends to (or starts) the run for `agentName` — the last run in the
+ * list if it already belongs to that agent, otherwise a fresh one. */
+function withRun(
+  runs: AgentRunTrace[],
+  agentName: string,
+  update: (run: AgentRunTrace) => AgentRunTrace
+): AgentRunTrace[] {
+  const last = runs[runs.length - 1];
+  if (last && last.agentName === agentName) {
+    return [...runs.slice(0, -1), update(last)];
+  }
+  return [...runs, update({ agentName, steps: [] })];
+}
+
+/** Updates the last matching pending tool-call step in the last run, mirroring
+ * the flat-`steps` update below but scoped to that run's own step list. */
+function withResultInLastRun(runs: AgentRunTrace[], name: string, result: string): AgentRunTrace[] {
+  if (runs.length === 0) return runs;
+  const last = runs[runs.length - 1];
+  const steps = last.steps.map((s, i) =>
+    s.kind === "tool_call" && s.name === name && i === last.steps.length - 1 ? { ...s, result } : s
+  );
+  return [...runs.slice(0, -1), { ...last, steps }];
+}
+
 /** Drives one workflow's chat turns against the SSE /chat endpoint. Shared
  * by the standalone Chat page and the workflow editor's Run/Preview panel
- * so both render off the same event state machine. */
-export function useAgentChat(workflowId: string) {
+ * so both render off the same event state machine.
+ *
+ * `workflowVersionId` pins every turn of this run to the version active
+ * when the hook first mounts — captured once into a ref rather than read
+ * live off the prop, so a parent re-render with a newer `current_version_id`
+ * (e.g. after a save elsewhere) can never retroactively move an in-flight
+ * conversation onto a different version. */
+export function useAgentChat(workflowId: string, workflowVersionId: string) {
+  const pinnedVersionId = useRef(workflowVersionId).current;
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -48,7 +90,7 @@ export function useAgentChat(workflowId: string) {
     setIsSending(true);
     setTurns((prev) => [
       ...prev,
-      { user: userMessage, steps: [], assistantText: "", isStreaming: true },
+      { user: userMessage, steps: [], runs: [], assistantText: "", isStreaming: true },
     ]);
 
     const updateLastTurn = (updater: (turn: Turn) => Turn) => {
@@ -60,15 +102,25 @@ export function useAgentChat(workflowId: string) {
     };
 
     try {
-      for await (const { event, data } of streamChat(workflowId, history)) {
+      for await (const { event, data } of streamChat(workflowId, pinnedVersionId, history)) {
         if (event === "token") {
-          const { text: delta } = data as TokenEventData;
-          updateLastTurn((t) => ({ ...t, assistantText: t.assistantText + delta }));
+          const { text: delta, agent_name } = data as TokenEventData;
+          const agentName = agent_name ?? DEFAULT_AGENT_NAME;
+          updateLastTurn((t) => ({
+            ...t,
+            assistantText: t.assistantText + delta,
+            runs: withRun(t.runs, agentName, (r) => r),
+          }));
         } else if (event === "tool_call_start") {
-          const { name, arguments: args } = data as ToolCallStartEventData;
+          const { name, arguments: args, agent_name } = data as ToolCallStartEventData;
+          const agentName = agent_name ?? DEFAULT_AGENT_NAME;
           updateLastTurn((t) => ({
             ...t,
             steps: [...t.steps, { kind: "tool_call", name, arguments: args }],
+            runs: withRun(t.runs, agentName, (r) => ({
+              ...r,
+              steps: [...r.steps, { kind: "tool_call", name, arguments: args }],
+            })),
           }));
         } else if (event === "tool_call_result") {
           const { name, result } = data as ToolCallResultEventData;
@@ -79,23 +131,41 @@ export function useAgentChat(workflowId: string) {
                 ? { ...s, result }
                 : s
             ),
+            runs: withResultInLastRun(t.runs, name, result),
           }));
         } else if (event === "final_response") {
-          const { text: finalText } = data as FinalResponseEventData;
-          updateLastTurn((t) => ({ ...t, assistantText: finalText, isStreaming: false }));
+          const { text: finalText, agent_name } = data as FinalResponseEventData;
+          updateLastTurn((t) => ({
+            ...t,
+            assistantText: finalText,
+            // A null agent_name is the End node's own canned override, not
+            // tied to any agent — it replaces the visible answer but isn't
+            // a run of its own.
+            runs: agent_name ? withRun(t.runs, agent_name, (r) => r) : t.runs,
+          }));
         } else if (event === "error") {
-          const { message } = data as ErrorEventData;
+          const { message, agent_name } = data as ErrorEventData;
+          const agentName = agent_name ?? DEFAULT_AGENT_NAME;
           updateLastTurn((t) => ({
             ...t,
             steps: [...t.steps, { kind: "error", message }],
+            runs: withRun(t.runs, agentName, (r) => ({
+              ...r,
+              steps: [...r.steps, { kind: "error", message }],
+            })),
             isStreaming: false,
           }));
         }
       }
     } catch (err) {
+      const message = (err as Error).message;
       updateLastTurn((t) => ({
         ...t,
-        steps: [...t.steps, { kind: "error", message: (err as Error).message }],
+        steps: [...t.steps, { kind: "error", message }],
+        runs: withRun(t.runs, DEFAULT_AGENT_NAME, (r) => ({
+          ...r,
+          steps: [...r.steps, { kind: "error", message }],
+        })),
         isStreaming: false,
       }));
     } finally {

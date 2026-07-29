@@ -4,6 +4,7 @@ import { AgentIcon, ChevronIcon, EditIcon, EndIcon, SendIcon, StartIcon } from "
 
 interface RunPanelProps {
   workflowId: string;
+  workflowVersionId: string;
 }
 
 function TraceRow({
@@ -36,8 +37,11 @@ function TraceRow({
   );
 }
 
-export function RunPanel({ workflowId }: RunPanelProps) {
-  const { turns, input, setInput, sendMessage, isSending, reset } = useAgentChat(workflowId);
+export function RunPanel({ workflowId, workflowVersionId }: RunPanelProps) {
+  const { turns, input, setInput, sendMessage, isSending, reset } = useAgentChat(
+    workflowId,
+    workflowVersionId
+  );
 
   return (
     <div className="run-panel">
@@ -71,31 +75,43 @@ export function RunPanel({ workflowId }: RunPanelProps) {
                       <div className="event-plain">Workflow triggered by new chat message.</div>
                     </TraceRow>
 
-                    <TraceRow icon={<AgentIcon />} kind="agent" name="Agent" type="agent" defaultOpen>
-                      {turn.steps.length === 0 && !turn.isStreaming && (
-                        <div className="event-plain">No tool calls — answered directly.</div>
-                      )}
-                      {turn.steps.map((step, j) =>
-                        step.kind === "tool_call" ? (
-                          <div className="trace-event" key={j}>
-                            <span className="event-label tool">tool_call</span>
-                            <code className="event-code">
-                              {step.name}({JSON.stringify(step.arguments)})
-                            </code>
-                            {step.result !== undefined && (
-                              <>
-                                <span className="event-label result">node_result</span>
-                                <code className="event-code">{step.result}</code>
-                              </>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="event-plain error-text" key={j}>
-                            {step.message}
-                          </div>
-                        )
-                      )}
-                    </TraceRow>
+                    {(turn.runs.length ? turn.runs : [{ agentName: "Agent", steps: [] }]).map((run, r, runs) => {
+                      const isLastRun = r === runs.length - 1;
+                      return (
+                        <TraceRow
+                          key={r}
+                          icon={<AgentIcon />}
+                          kind="agent"
+                          name={run.agentName}
+                          type="agent"
+                          defaultOpen={isLastRun}
+                        >
+                          {run.steps.length === 0 && (!turn.isStreaming || !isLastRun) && (
+                            <div className="event-plain">No tool calls — answered directly.</div>
+                          )}
+                          {run.steps.map((step, j) =>
+                            step.kind === "tool_call" ? (
+                              <div className="trace-event" key={j}>
+                                <span className="event-label tool">tool_call</span>
+                                <code className="event-code">
+                                  {step.name}({JSON.stringify(step.arguments)})
+                                </code>
+                                {step.result !== undefined && (
+                                  <>
+                                    <span className="event-label result">node_result</span>
+                                    <code className="event-code">{step.result}</code>
+                                  </>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="event-plain error-text" key={j}>
+                                {step.message}
+                              </div>
+                            )
+                          )}
+                        </TraceRow>
+                      );
+                    })}
 
                     {!turn.isStreaming && !hasError && (
                       <TraceRow icon={<EndIcon />} kind="end" name="End" type="final">

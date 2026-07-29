@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from sse_starlette.sse import EventSourceResponse
 
 load_dotenv()
@@ -22,9 +22,10 @@ from .agent import (
     TokenEvent,
     run_agent_loop,
 )
-from .db import get_db
+from .db import get_db, get_session_factory
+from .executions import ExecutionRecorder
 from .llm import LLMClient, OpenAILLMClient
-from .workflows_api import get_workflow_or_404
+from .workflows_api import get_workflow_or_404, get_workflow_version_or_404
 from .workflows_api import router as workflows_router
 
 app = FastAPI(title="AI Workflow Builder — backend")
@@ -51,26 +52,40 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     workflow_id: str
+    # Pins the run to the WorkflowVersion active when the chat started; the
+    # frontend captures this once per conversation (see useAgentChat) and
+    # resends it on every turn so a later workflow edit can't retroactively
+    # change an in-flight run. Omitted, it falls back to the workflow's
+    # current version — used by callers that don't pin (e.g. tests).
+    workflow_version_id: str | None = None
     messages: list[ChatMessage] = Field(min_length=1)
 
 
 def _to_sse(event: AgentEvent) -> dict:
     if isinstance(event, TokenEvent):
-        return {"event": "token", "data": json.dumps({"text": event.text})}
+        return {"event": "token", "data": json.dumps({"text": event.text, "agent_name": event.agent_name})}
     if isinstance(event, ToolCallStartEvent):
         return {
             "event": "tool_call_start",
-            "data": json.dumps({"name": event.name, "arguments": event.arguments}),
+            "data": json.dumps(
+                {"name": event.name, "arguments": event.arguments, "agent_name": event.agent_name}
+            ),
         }
     if isinstance(event, ToolCallResultEvent):
         return {
             "event": "tool_call_result",
-            "data": json.dumps({"name": event.name, "result": event.result}),
+            "data": json.dumps({"name": event.name, "result": event.result, "agent_name": event.agent_name}),
         }
     if isinstance(event, FinalResponseEvent):
-        return {"event": "final_response", "data": json.dumps({"text": event.text})}
+        return {
+            "event": "final_response",
+            "data": json.dumps({"text": event.text, "agent_name": event.agent_name}),
+        }
     if isinstance(event, ErrorEvent):
-        return {"event": "error", "data": json.dumps({"message": event.message})}
+        return {
+            "event": "error",
+            "data": json.dumps({"message": event.message, "agent_name": event.agent_name}),
+        }
     raise ValueError(f"Unknown agent event type: {event!r}")
 
 
@@ -79,14 +94,21 @@ def chat(
     request: ChatRequest,
     llm_client: LLMClient = Depends(get_llm_client),
     db: Session = Depends(get_db),
+    session_factory: sessionmaker[Session] = Depends(get_session_factory),
 ):
     workflow = get_workflow_or_404(request.workflow_id, db)
+    version = get_workflow_version_or_404(workflow, request.workflow_version_id, db)
 
     history = [m.model_dump() for m in request.messages]
+    graph = version.graph
+    workflow_version_id = version.id
 
     def event_stream():
-        for event in run_agent_loop(llm_client, workflow.graph, history):
-            yield _to_sse(event)
+        with session_factory() as exec_db:
+            recorder = ExecutionRecorder(exec_db, workflow_version_id, history)
+            for event in run_agent_loop(llm_client, graph, history):
+                recorder.on_event(event)
+                yield _to_sse(event)
 
     return EventSourceResponse(event_stream())
 

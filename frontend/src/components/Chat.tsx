@@ -2,12 +2,16 @@ import { useAgentChat } from "../hooks/useAgentChat";
 
 interface ChatProps {
   workflowId: string;
+  workflowVersionId: string;
   workflowName: string;
   onBack: () => void;
 }
 
-export function Chat({ workflowId, workflowName, onBack }: ChatProps) {
-  const { turns, input, setInput, sendMessage, isSending } = useAgentChat(workflowId);
+export function Chat({ workflowId, workflowVersionId, workflowName, onBack }: ChatProps) {
+  const { turns, input, setInput, sendMessage, isSending } = useAgentChat(
+    workflowId,
+    workflowVersionId
+  );
 
   return (
     <div className="chat">

@@ -6,12 +6,31 @@ A local web app for building and chatting with configurable AI workflows (system
 
 ## Prerequisites
 
-- Python 3.13+ and [uv](https://docs.astral.sh/uv/)
-- Node.js 20+ and npm
-- An OpenAI API key
-- A Postgres 16 database reachable at `DATABASE_URL` (Docker is the easiest way to get one locally — see below; `docker-compose` support for the whole stack lands in a later ticket)
+- Docker and Docker Compose — the one-command path below needs nothing else
+- For the manual (non-Docker) path instead: Python 3.13+ and [uv](https://docs.astral.sh/uv/), Node.js 20+ and npm, and a Postgres 16 database reachable at `DATABASE_URL`
+- An OpenAI API key either way
 
-## Setup
+## Setup (Docker — recommended)
+
+1. Copy the env file and fill in your OpenAI API key:
+
+   ```sh
+   cp .env.example .env
+   ```
+
+   (`.env` needs at least `OPENAI_API_KEY`; the rest have working defaults for Compose.)
+
+2. Bring up the whole stack (frontend, backend, Postgres):
+
+   ```sh
+   docker-compose up
+   ```
+
+3. Open `http://localhost:5173`. Create a workflow (name, system prompt, tool toggles), then click "Chat" on its card. Ask something requiring arithmetic (e.g. "what is 47 * 12?") to see the calculator tool call render as an intermediate step before the final response, if the calculator tool is enabled.
+
+The backend runs its Alembic migrations automatically on container start. Postgres data persists in a named volume (`postgres-data`) across restarts; `docker-compose down -v` clears it.
+
+## Setup (manual, no Docker)
 
 1. Copy the env file and fill in your OpenAI API key:
 
@@ -58,7 +77,8 @@ Tests exercise the FastAPI `TestClient` against the real `/chat` and `/workflows
 ## Project layout
 
 ```
-backend/    FastAPI app — workflow CRUD, chat endpoint, agent loop, tools, Alembic migrations
-frontend/   React + Vite + TypeScript UI — workflows dashboard, workflow form, chat
-.scratch/   Spec and tickets driving this build
+backend/            FastAPI app — workflow CRUD, chat endpoint, agent loop, tools, Alembic migrations
+frontend/           React + Vite + TypeScript UI — workflows dashboard, workflow form, chat
+docker-compose.yml  One-command local stack (frontend + backend + Postgres)
+.scratch/           Spec and tickets driving this build
 ```

@@ -19,9 +19,10 @@ def get_workflow_or_404(workflow_id: str, db: Session) -> Workflow:
 
 
 def _apply_graph(workflow: Workflow, graph: WorkflowGraph) -> None:
-    """Writes the graph plus the flat system_prompt/enabled_tools columns the
-    LangGraph compiler reads (see agent.py) — kept in lockstep here so the two
-    representations of the agent node's config never drift apart."""
+    """Writes the graph plus denormalized system_prompt/enabled_tools columns
+    used for the workflow list view (see WorkflowsList.tsx) — the LangGraph
+    compiler (agent.py) reads the agent node's config straight out of the
+    graph itself, so these columns exist for display only."""
     agent_data = agent_node_data(graph)
     workflow.graph = graph.model_dump()
     workflow.system_prompt = agent_data.get("system_prompt", "")

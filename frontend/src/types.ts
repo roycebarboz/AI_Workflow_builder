@@ -1,4 +1,4 @@
-export type GraphNodeType = "start" | "agent" | "end";
+export type GraphNodeType = "start" | "agent" | "condition" | "end";
 
 export interface GraphPosition {
   x: number;
@@ -8,6 +8,14 @@ export interface GraphPosition {
 export interface AgentNodeData {
   system_prompt: string;
   enabled_tools: string[];
+}
+
+export interface ConditionNodeData {
+  keyword: string;
+}
+
+export interface EndNodeData {
+  message?: string;
 }
 
 export interface GraphNode {
@@ -21,6 +29,7 @@ export interface GraphEdge {
   id: string;
   source: string;
   target: string;
+  sourceHandle?: string | null;
 }
 
 export interface WorkflowGraph {

@@ -4,6 +4,7 @@ in-memory, see conftest.py) — no mocking below the TestClient boundary.
 
 from __future__ import annotations
 
+from .factories import branching_workflow_graph as _branch_graph
 from .factories import workflow_graph as _graph
 
 
@@ -98,6 +99,58 @@ def test_update_workflow_missing_returns_404(client):
         json={"name": "A", "graph": _graph()},
     )
     assert response.status_code == 404
+
+
+def test_create_workflow_accepts_branching_graph(client):
+    response = client.post(
+        "/workflows",
+        json={
+            "name": "Triage",
+            "graph": _branch_graph(keyword="urgent", canned_message="Escalating."),
+        },
+    )
+    assert response.status_code == 201
+    nodes = response.json()["graph"]["nodes"]
+    assert any(n["type"] == "condition" for n in nodes)
+
+
+def test_create_workflow_rejects_condition_without_keyword(client):
+    graph = _branch_graph(keyword="urgent", canned_message="Escalating.")
+    for node in graph["nodes"]:
+        if node["type"] == "condition":
+            node["data"] = {}
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+def test_create_workflow_rejects_condition_with_one_branch(client):
+    graph = _branch_graph(keyword="urgent", canned_message="Escalating.")
+    graph["edges"] = [e for e in graph["edges"] if e["id"] != "cond-canned"]
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+def test_create_workflow_rejects_condition_branch_to_end_without_message(client):
+    graph = _branch_graph(keyword="urgent", canned_message="Escalating.")
+    for node in graph["nodes"]:
+        if node["id"] == "canned-end":
+            node["data"] = {}
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+def test_create_workflow_rejects_agent_edge_to_condition(client):
+    graph = _branch_graph(keyword="urgent", canned_message="Escalating.")
+    graph["nodes"].append(
+        {"id": "cond2", "type": "condition", "position": {"x": 800, "y": 0}, "data": {"keyword": "x"}}
+    )
+    for edge in graph["edges"]:
+        if edge["id"] == "agent-end":
+            edge["target"] = "cond2"
+    graph["edges"].append({"id": "cond2-a", "source": "cond2", "target": "end", "sourceHandle": "true"})
+    graph["edges"].append({"id": "cond2-b", "source": "cond2", "target": "end", "sourceHandle": "false"})
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
 
 
 def test_list_tools(client):

@@ -20,7 +20,7 @@ class _FakeLLMClient:
     def __init__(self, turns: list[list]) -> None:
         self._turns = list(turns)
 
-    def stream_chat(self, messages, tools):
+    def stream_chat(self, messages, tools, *, response_format=None):
         return iter(self._turns.pop(0))
 
 

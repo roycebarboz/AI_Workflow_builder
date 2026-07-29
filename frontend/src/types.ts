@@ -1,17 +1,17 @@
-export type GraphNodeType = "start" | "agent" | "condition" | "end" | "if_else" | "sticky_note";
+export type GraphNodeType = "start" | "agent" | "end" | "if_else" | "sticky_note";
 
 export interface GraphPosition {
   x: number;
   y: number;
 }
 
+export type AgentOutputFormat = "text" | "json";
+
 export interface AgentNodeData {
+  name: string;
   system_prompt: string;
   enabled_tools: string[];
-}
-
-export interface ConditionNodeData {
-  keyword: string;
+  output_format: AgentOutputFormat;
 }
 
 export interface EndNodeData {
@@ -80,24 +80,30 @@ export type AgentStep =
 
 export interface TokenEventData {
   text: string;
+  agent_name: string | null;
 }
 
 export interface ToolCallStartEventData {
   name: string;
   arguments: unknown;
+  agent_name: string | null;
 }
 
 export interface ToolCallResultEventData {
   name: string;
   result: string;
+  agent_name: string | null;
 }
 
 export interface FinalResponseEventData {
   text: string;
+  // null for a fixed End-node message (not produced by any agent).
+  agent_name: string | null;
 }
 
 export interface ErrorEventData {
   message: string;
+  agent_name: string | null;
 }
 
 export type ExecutionStatus = "running" | "completed" | "error";

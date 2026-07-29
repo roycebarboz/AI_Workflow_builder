@@ -24,7 +24,7 @@ class FakeLLMClient:
     def __init__(self, turns: list[list]) -> None:
         self._turns = list(turns)
 
-    def stream_chat(self, messages, tools):
+    def stream_chat(self, messages, tools, *, response_format=None):
         return iter(self._turns.pop(0))
 
 
@@ -81,26 +81,26 @@ def test_routes_to_matching_branch(client):
     workflow_id = _create_workflow(client)
     events = _run_chat(client, workflow_id, "This looks like a billing issue.")
     assert [e[0] for e in events] == ["token", "final_response", "final_response"]
-    assert events[0][1] == {"text": "This looks like a billing issue."}
-    assert events[-1][1] == {"text": "Routed: billing"}
+    assert events[0][1] == {"text": "This looks like a billing issue.", "agent_name": "Agent"}
+    assert events[-1][1] == {"text": "Routed: billing", "agent_name": None}
 
 
 def test_falls_through_to_else_when_nothing_matches(client):
     workflow_id = _create_workflow(client)
     events = _run_chat(client, workflow_id, "I have a general question.")
-    assert events[-1][1] == {"text": "Routed: else"}
+    assert events[-1][1] == {"text": "Routed: else", "agent_name": None}
 
 
 def test_first_matching_branch_wins(client):
     workflow_id = _create_workflow(client)
     events = _run_chat(client, workflow_id, "This is both a billing and technical issue.")
-    assert events[-1][1] == {"text": "Routed: billing"}
+    assert events[-1][1] == {"text": "Routed: billing", "agent_name": None}
 
 
 def test_match_is_case_insensitive(client):
     workflow_id = _create_workflow(client)
     events = _run_chat(client, workflow_id, "BILLING problem here.")
-    assert events[-1][1] == {"text": "Routed: billing"}
+    assert events[-1][1] == {"text": "Routed: billing", "agent_name": None}
 
 
 def test_chained_if_else_nodes(client):
@@ -129,4 +129,4 @@ def test_chained_if_else_nodes(client):
     workflow_id = response.json()["id"]
 
     events = _run_chat(client, workflow_id, "This is a technical problem.")
-    assert events[-1][1] == {"text": "Routed: technical"}
+    assert events[-1][1] == {"text": "Routed: technical", "agent_name": None}

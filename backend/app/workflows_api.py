@@ -14,6 +14,7 @@ from .schemas import (
     WorkflowOut,
     WorkflowUpdate,
     agent_node_data,
+    all_enabled_tools,
 )
 from .tools.registry import TOOLS
 
@@ -52,7 +53,7 @@ def _apply_graph(workflow: Workflow, graph: WorkflowGraph, db: Session) -> None:
         workflow_id=workflow.id,
         graph=graph.model_dump(),
         system_prompt=agent_data.get("system_prompt", ""),
-        enabled_tools=agent_data.get("enabled_tools", []),
+        enabled_tools=all_enabled_tools(graph),
     )
     db.add(version)
     db.flush()  # assigns version.id so workflow.current_version_id can point at it
@@ -94,6 +95,26 @@ def update_workflow(
     db.commit()
     db.refresh(workflow)
     return workflow
+
+
+@router.delete("/workflows/{workflow_id}", status_code=204)
+def delete_workflow(workflow_id: str, db: Session = Depends(get_db)) -> None:
+    """Deletes a workflow along with every WorkflowVersion snapshot and
+    ExecutionRecord under it. No ON DELETE CASCADE is set on either FK (see
+    the alembic migrations), so children must be removed in dependency
+    order — executions before versions, versions before the workflow —
+    or Postgres rejects the delete with a foreign-key violation."""
+    workflow = get_workflow_or_404(workflow_id, db)
+
+    version_ids = [
+        v.id for v in db.query(WorkflowVersion).filter(WorkflowVersion.workflow_id == workflow_id).all()
+    ]
+    db.query(ExecutionRecord).filter(ExecutionRecord.workflow_version_id.in_(version_ids)).delete(
+        synchronize_session=False
+    )
+    db.query(WorkflowVersion).filter(WorkflowVersion.id.in_(version_ids)).delete(synchronize_session=False)
+    db.delete(workflow)
+    db.commit()
 
 
 def _executions_for_workflow(workflow_id: str, db: Session):

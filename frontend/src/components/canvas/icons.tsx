@@ -22,16 +22,6 @@ export function EndIcon() {
   );
 }
 
-export function ConditionIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M6 4v6c0 3 3 4 6 4s6 1 6 4v2" />
-      <circle cx="6" cy="4" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="18" cy="20" r="1.6" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
 export function IfElseIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

@@ -35,7 +35,9 @@ LLMStreamEvent = ContentDelta | ToolCallRequest | StreamDone
 
 
 class LLMClient(Protocol):
-    def stream_chat(self, messages: list[dict], tools: list[dict]) -> Iterator[LLMStreamEvent]:
+    def stream_chat(
+        self, messages: list[dict], tools: list[dict], *, response_format: dict | None = None
+    ) -> Iterator[LLMStreamEvent]:
         ...
 
 
@@ -51,12 +53,16 @@ class OpenAILLMClient:
         self._client = client
         self._model = model
 
-    def stream_chat(self, messages: list[dict], tools: list[dict]) -> Iterator[LLMStreamEvent]:
+    def stream_chat(
+        self, messages: list[dict], tools: list[dict], *, response_format: dict | None = None
+    ) -> Iterator[LLMStreamEvent]:
+        kwargs = {"response_format": response_format} if response_format is not None else {}
         stream = self._client.chat.completions.create(
             model=self._model,
             messages=messages,
             tools=tools,
             stream=True,
+            **kwargs,
         )
 
         pending_calls: dict[int, _PendingToolCall] = {}

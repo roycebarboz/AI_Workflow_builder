@@ -207,11 +207,6 @@
   color: var(--blue);
 }
 
-.pal-icon.cond {
-  background: var(--orange-bg);
-  color: var(--orange);
-}
-
 .pal-icon.if-else {
   background: var(--red-bg);
   color: var(--red);
@@ -317,36 +312,6 @@
 .rf-node.n-agent .rf-node-icon {
   background: var(--blue-bg);
   color: var(--blue);
-}
-
-.rf-node.n-condition .rf-node-icon {
-  background: var(--orange-bg);
-  color: var(--orange);
-}
-
-.rf-node.n-condition {
-  min-width: 168px;
-  padding-bottom: 26px;
-}
-
-.rf-node-branch-label {
-  position: absolute;
-  right: -34px;
-  transform: translateY(-50%);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  pointer-events: none;
-}
-
-.rf-node-branch-label.branch-true {
-  color: var(--green);
-}
-
-.rf-node-branch-label.branch-false {
-  color: var(--red);
 }
 
 .rf-node.n-if-else .rf-node-icon {
@@ -650,6 +615,32 @@ textarea.ta:focus {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* two-state segmented toggle (e.g. agent output format) */
+.segmented {
+  display: inline-flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.segmented-option {
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-family: inherit;
+  padding: 6px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.segmented-option.active {
+  background: var(--blue-bg);
+  color: var(--blue);
 }
 
 .tool-row {

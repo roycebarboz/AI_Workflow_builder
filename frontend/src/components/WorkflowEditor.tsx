@@ -12,21 +12,13 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { createWorkflow, listTools, updateWorkflow } from "../api/workflows";
-import {
-  START_NODE_ID,
-  agentDataOf,
-  defaultDataFor,
-  defaultGraph,
-  newBranchId,
-  newNodeId,
-} from "../lib/defaultGraph";
-import type { GraphNode, GraphNodeType, IfElseBranch, ToolInfo, Workflow } from "../types";
+import { START_NODE_ID, defaultDataFor, defaultGraph, newBranchId, newNodeId } from "../lib/defaultGraph";
+import type { AgentOutputFormat, GraphNode, GraphNodeType, IfElseBranch, ToolInfo, Workflow } from "../types";
 import { nodeTypes } from "./canvas/GraphNodes";
 import {
   AgentIcon,
   BackIcon,
   CloseIcon,
-  ConditionIcon,
   EditIcon,
   EmptyPanelIcon,
   EndIcon,
@@ -59,8 +51,13 @@ function branchesField(data: Record<string, unknown>): IfElseBranch[] {
 }
 
 function initialNodeData(node: GraphNode): Record<string, unknown> {
-  if (node.type === "condition") {
-    return { keyword: stringField(node.data, "keyword") };
+  if (node.type === "agent") {
+    return {
+      name: stringField(node.data, "name"),
+      system_prompt: stringField(node.data, "system_prompt"),
+      enabled_tools: Array.isArray(node.data.enabled_tools) ? (node.data.enabled_tools as string[]) : [],
+      output_format: node.data.output_format === "json" ? "json" : "text",
+    };
   }
   if (node.type === "end") {
     return { message: stringField(node.data, "message") };
@@ -131,12 +128,7 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
   );
   const rfInstance = useRef<ReactFlowInstance | null>(null);
 
-  const initialAgentData = useMemo(() => agentDataOf(initialGraph), [initialGraph]);
   const [name, setName] = useState(workflow?.name ?? "");
-  const [systemPrompt, setSystemPrompt] = useState(initialAgentData.system_prompt);
-  const [enabledTools, setEnabledTools] = useState<Set<string>>(
-    new Set(initialAgentData.enabled_tools)
-  );
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [mode, setMode] = useState<"edit" | "run">("edit");
@@ -150,17 +142,21 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
       .catch((err) => setError((err as Error).message));
   }, []);
 
-  function toggleTool(toolName: string) {
-    setEnabledTools((prev) => {
-      const next = new Set(prev);
-      if (next.has(toolName)) next.delete(toolName);
-      else next.add(toolName);
-      return next;
-    });
-  }
-
   function updateNodeData(nodeId: string, patch: Record<string, unknown>) {
     setNodes((nds) => nds.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, ...patch } } : n)));
+  }
+
+  function toggleAgentTool(nodeId: string, toolName: string) {
+    setNodes((nds) =>
+      nds.map((n) => {
+        if (n.id !== nodeId) return n;
+        const current = Array.isArray(n.data.enabled_tools) ? (n.data.enabled_tools as string[]) : [];
+        const enabled_tools = current.includes(toolName)
+          ? current.filter((t) => t !== toolName)
+          : [...current, toolName];
+        return { ...n, data: { ...n.data, enabled_tools } };
+      })
+    );
   }
 
   function deleteNode(nodeId: string) {
@@ -249,10 +245,9 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
       const sourceNode = nodes.find((n) => n.id === source);
       const targetNode = nodes.find((n) => n.id === target);
       if (!sourceNode || !targetNode) return false;
-      if (sourceNode.type === "agent" && targetNode.type !== "end" && targetNode.type !== "if_else")
-        return false;
-      if (sourceNode.type === "if_else" && targetNode.type !== "end" && targetNode.type !== "if_else")
-        return false;
+      const agentOutTargets = ["end", "if_else", "agent"];
+      if (sourceNode.type === "agent" && !agentOutTargets.includes(targetNode.type ?? "")) return false;
+      if (sourceNode.type === "if_else" && !agentOutTargets.includes(targetNode.type ?? "")) return false;
       if (targetNode.type === "if_else" && sourceNode.type !== "agent" && sourceNode.type !== "if_else")
         return false;
       if (sourceNode.type === "start" && targetNode.type === "end") return false;
@@ -311,9 +306,12 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
           nodes: nodes.map((n) => {
             let data: Record<string, unknown> = {};
             if (n.type === "agent") {
-              data = { system_prompt: systemPrompt, enabled_tools: Array.from(enabledTools) };
-            } else if (n.type === "condition") {
-              data = { keyword: stringField(n.data, "keyword") };
+              data = {
+                name: stringField(n.data, "name").trim(),
+                system_prompt: stringField(n.data, "system_prompt"),
+                enabled_tools: Array.isArray(n.data.enabled_tools) ? n.data.enabled_tools : [],
+                output_format: n.data.output_format === "json" ? "json" : "text",
+              };
             } else if (n.type === "end") {
               const message = stringField(n.data, "message").trim();
               data = message ? { message } : {};
@@ -428,17 +426,6 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
           <div
             className="palette-item draggable"
             draggable
-            onDragStart={(e) => onPaletteDragStart(e, "condition")}
-            title="Drag onto the canvas"
-          >
-            <span className="pal-icon cond">
-              <ConditionIcon />
-            </span>
-            Condition
-          </div>
-          <div
-            className="palette-item draggable"
-            draggable
             onDragStart={(e) => onPaletteDragStart(e, "if_else")}
             title="Drag onto the canvas"
           >
@@ -527,66 +514,74 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
             {selectedNode?.type === "agent" && (
               <PanelShell
                 title="Agent"
-                desc="System prompt and tools. The agent decides which enabled tools to call, looping until it produces a final answer."
+                desc="Name, system prompt, tools, and output format. The agent decides which enabled tools to call, looping until it produces a final answer."
                 onClose={() => setSelectedNodeId(null)}
                 onDelete={() => deleteNode(selectedNode.id)}
               >
+                <div className="field">
+                  <div className="field-label">Name</div>
+                  <input
+                    className="text-input"
+                    value={stringField(selectedNode.data, "name")}
+                    onChange={(e) => updateNodeData(selectedNode.id, { name: e.target.value })}
+                    placeholder="e.g. Billing agent"
+                  />
+                </div>
                 <div className="field">
                   <div className="field-label">System prompt</div>
                   <textarea
                     className="ta"
-                    value={systemPrompt}
-                    onChange={(e) => setSystemPrompt(e.target.value)}
+                    value={stringField(selectedNode.data, "system_prompt")}
+                    onChange={(e) => updateNodeData(selectedNode.id, { system_prompt: e.target.value })}
                     placeholder="You are a helpful assistant that..."
                   />
                 </div>
                 <div className="field">
-                  <div className="field-label">Tools</div>
-                  <div className="tool-list">
-                    {tools.map((tool) => (
-                      <div className="tool-row" key={tool.name}>
-                        <span className="tool-row-icon">{toolIcon(tool.name)}</span>
-                        <div className="tool-row-text">
-                          <div className="tool-row-name">{tool.name}</div>
-                          <div className="tool-row-desc">{tool.description}</div>
-                        </div>
-                        <label className="switch">
-                          <input
-                            type="checkbox"
-                            checked={enabledTools.has(tool.name)}
-                            onChange={() => toggleTool(tool.name)}
-                          />
-                          <span className="track">
-                            <span className="thumb" />
-                          </span>
-                        </label>
-                      </div>
+                  <div className="field-label">Output format</div>
+                  <div className="segmented">
+                    {(["text", "json"] as AgentOutputFormat[]).map((format) => (
+                      <button
+                        key={format}
+                        type="button"
+                        className={`segmented-option${
+                          (selectedNode.data.output_format ?? "text") === format ? " active" : ""
+                        }`}
+                        onClick={() => updateNodeData(selectedNode.id, { output_format: format })}
+                      >
+                        {format === "text" ? "Text" : "JSON"}
+                      </button>
                     ))}
                   </div>
                 </div>
-              </PanelShell>
-            )}
-
-            {selectedNode?.type === "condition" && (
-              <PanelShell
-                title="Condition"
-                desc="Checks the user's latest message for a keyword and routes down the True or False branch accordingly."
-                onClose={() => setSelectedNodeId(null)}
-                onDelete={() => deleteNode(selectedNode.id)}
-              >
                 <div className="field">
-                  <div className="field-label">Keyword to match</div>
-                  <input
-                    className="text-input"
-                    value={stringField(selectedNode.data, "keyword")}
-                    onChange={(e) => updateNodeData(selectedNode.id, { keyword: e.target.value })}
-                    placeholder="e.g. urgent"
-                  />
+                  <div className="field-label">Tools</div>
+                  <div className="tool-list">
+                    {tools.map((tool) => {
+                      const enabled = Array.isArray(selectedNode.data.enabled_tools)
+                        ? (selectedNode.data.enabled_tools as string[]).includes(tool.name)
+                        : false;
+                      return (
+                        <div className="tool-row" key={tool.name}>
+                          <span className="tool-row-icon">{toolIcon(tool.name)}</span>
+                          <div className="tool-row-text">
+                            <div className="tool-row-name">{tool.name}</div>
+                            <div className="tool-row-desc">{tool.description}</div>
+                          </div>
+                          <label className="switch">
+                            <input
+                              type="checkbox"
+                              checked={enabled}
+                              onChange={() => toggleAgentTool(selectedNode.id, tool.name)}
+                            />
+                            <span className="track">
+                              <span className="thumb" />
+                            </span>
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <p className="info-note">
-                  Wire the <b>True</b> handle to where matching messages should go, and{" "}
-                  <b>False</b> to where everything else should go.
-                </p>
               </PanelShell>
             )}
 
@@ -679,7 +674,7 @@ export function WorkflowEditor({ workflow, onBack, onSaved }: WorkflowEditorProp
                     className="ta"
                     value={stringField(selectedNode.data, "message")}
                     onChange={(e) => updateNodeData(selectedNode.id, { message: e.target.value })}
-                    placeholder="Only used if this end is reached without going through the agent, e.g. from a condition's branch."
+                    placeholder="Overrides the last agent's answer with a fixed message when this end is reached."
                   />
                 </div>
               </PanelShell>

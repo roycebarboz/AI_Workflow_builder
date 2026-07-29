@@ -1,6 +1,5 @@
 import type {
   AgentNodeData,
-  ConditionNodeData,
   GraphNodeType,
   IfElseNodeData,
   StickyNoteNodeData,
@@ -14,11 +13,7 @@ export const START_NODE_ID = "start";
 export const ELSE_BRANCH = "else";
 
 export function defaultAgentData(): AgentNodeData {
-  return { system_prompt: "", enabled_tools: [] };
-}
-
-export function defaultConditionData(): ConditionNodeData {
-  return { keyword: "" };
+  return { name: "", system_prompt: "", enabled_tools: [], output_format: "text" };
 }
 
 export function defaultIfElseData(): IfElseNodeData {
@@ -47,26 +42,17 @@ export function newBranchId(): string {
 }
 
 export function defaultDataFor(type: GraphNodeType): Record<string, unknown> {
-  if (type === "condition") return { ...defaultConditionData() };
   if (type === "agent") return { ...defaultAgentData() };
   if (type === "if_else") return { ...defaultIfElseData() };
   if (type === "sticky_note") return { ...defaultStickyNoteData() };
   return {};
 }
 
-/** A new workflow starts with just the required Start node — Agent, Condition,
+/** A new workflow starts with just the required Start node — Agent, If/else,
  * and End are dragged in from the palette to build out the rest. */
 export function defaultGraph(): WorkflowGraph {
   return {
     nodes: [{ id: START_NODE_ID, type: "start", position: { x: 40, y: 180 }, data: {} }],
     edges: [],
-  };
-}
-
-export function agentDataOf(graph: WorkflowGraph): AgentNodeData {
-  const data = graph.nodes.find((n) => n.type === "agent")?.data ?? {};
-  return {
-    system_prompt: typeof data.system_prompt === "string" ? data.system_prompt : "",
-    enabled_tools: Array.isArray(data.enabled_tools) ? (data.enabled_tools as string[]) : [],
   };
 }

@@ -4,8 +4,8 @@ in-memory, see conftest.py) — no mocking below the TestClient boundary.
 
 from __future__ import annotations
 
-from .factories import branching_workflow_graph as _branch_graph
 from .factories import if_else_workflow_graph as _if_else_graph
+from .factories import multi_agent_workflow_graph as _multi_agent_graph
 from .factories import workflow_graph as _graph
 
 
@@ -27,6 +27,23 @@ def test_create_workflow(client):
     assert "created_at" in body
     assert "updated_at" in body
     assert body["current_version_id"]
+
+
+def test_create_workflow_denormalizes_union_of_all_agents_tools(client):
+    """The workflow-level enabled_tools column (used by the list view) must
+    reflect every agent's tools, not just the first agent's — otherwise a
+    multi-agent graph whose first agent has no tools shows "No tools
+    enabled" even though downstream agents use calculator/web_search."""
+    graph = _multi_agent_graph()
+    for node in graph["nodes"]:
+        if node["id"] == "agent1":
+            node["data"]["enabled_tools"] = ["web_search"]
+        if node["id"] == "agent2":
+            node["data"]["enabled_tools"] = ["calculator"]
+
+    response = client.post("/workflows", json={"name": "Multi", "graph": graph})
+    assert response.status_code == 201
+    assert set(response.json()["enabled_tools"]) == {"web_search", "calculator"}
 
 
 def test_create_workflow_rejects_unknown_tool(client):
@@ -120,54 +137,86 @@ def test_update_workflow_missing_returns_404(client):
     assert response.status_code == 404
 
 
-def test_create_workflow_accepts_branching_graph(client):
+def test_delete_workflow(client):
+    created = client.post("/workflows", json={"name": "A", "graph": _graph()}).json()
+
+    response = client.delete(f"/workflows/{created['id']}")
+    assert response.status_code == 204
+
+    assert client.get(f"/workflows/{created['id']}").status_code == 404
+    assert created["id"] not in {w["id"] for w in client.get("/workflows").json()}
+
+
+def test_delete_workflow_removes_its_executions(client):
+    """A workflow with chat history must still delete cleanly — its
+    ExecutionRecords (via WorkflowVersion) can't be left orphaned or block
+    the delete with a foreign-key violation."""
+    from app.llm import ContentDelta, StreamDone
+    from app.main import app, get_llm_client
+
+    created = client.post("/workflows", json={"name": "A", "graph": _graph()}).json()
+
+    class _FakeLLMClient:
+        def stream_chat(self, messages, tools, *, response_format=None):
+            return iter([ContentDelta(text="hi"), StreamDone(finish_reason="stop")])
+
+    app.dependency_overrides[get_llm_client] = lambda: _FakeLLMClient()
+    try:
+        with client.stream(
+            "POST",
+            "/chat",
+            json={"workflow_id": created["id"], "messages": [{"role": "user", "content": "hi"}]},
+        ) as response:
+            assert response.status_code == 200
+            for _ in response.iter_text():
+                pass
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
+    assert len(client.get(f"/workflows/{created['id']}/executions").json()) == 1
+
+    response = client.delete(f"/workflows/{created['id']}")
+    assert response.status_code == 204
+
+
+def test_delete_workflow_missing_returns_404(client):
+    response = client.delete("/workflows/does-not-exist")
+    assert response.status_code == 404
+
+
+def test_create_workflow_rejects_agent_without_name(client):
+    graph = _graph()
+    for node in graph["nodes"]:
+        if node["type"] == "agent":
+            node["data"] = {**node["data"], "name": ""}
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+def test_create_workflow_rejects_invalid_output_format(client):
+    graph = _graph()
+    for node in graph["nodes"]:
+        if node["type"] == "agent":
+            node["data"] = {**node["data"], "output_format": "xml"}
+    response = client.post("/workflows", json={"name": "A", "graph": graph})
+    assert response.status_code == 422
+
+
+def test_create_workflow_accepts_multi_agent_chain(client):
     response = client.post(
         "/workflows",
-        json={
-            "name": "Triage",
-            "graph": _branch_graph(keyword="urgent", canned_message="Escalating."),
-        },
+        json={"name": "Chain", "graph": _multi_agent_graph()},
     )
     assert response.status_code == 201
-    nodes = response.json()["graph"]["nodes"]
-    assert any(n["type"] == "condition" for n in nodes)
+    agent_nodes = [n for n in response.json()["graph"]["nodes"] if n["type"] == "agent"]
+    assert len(agent_nodes) == 2
 
 
-def test_create_workflow_rejects_condition_without_keyword(client):
-    graph = _branch_graph(keyword="urgent", canned_message="Escalating.")
+def test_create_workflow_rejects_duplicate_agent_names(client):
+    graph = _multi_agent_graph()
     for node in graph["nodes"]:
-        if node["type"] == "condition":
-            node["data"] = {}
-    response = client.post("/workflows", json={"name": "A", "graph": graph})
-    assert response.status_code == 422
-
-
-def test_create_workflow_rejects_condition_with_one_branch(client):
-    graph = _branch_graph(keyword="urgent", canned_message="Escalating.")
-    graph["edges"] = [e for e in graph["edges"] if e["id"] != "cond-canned"]
-    response = client.post("/workflows", json={"name": "A", "graph": graph})
-    assert response.status_code == 422
-
-
-def test_create_workflow_rejects_condition_branch_to_end_without_message(client):
-    graph = _branch_graph(keyword="urgent", canned_message="Escalating.")
-    for node in graph["nodes"]:
-        if node["id"] == "canned-end":
-            node["data"] = {}
-    response = client.post("/workflows", json={"name": "A", "graph": graph})
-    assert response.status_code == 422
-
-
-def test_create_workflow_rejects_agent_edge_to_condition(client):
-    graph = _branch_graph(keyword="urgent", canned_message="Escalating.")
-    graph["nodes"].append(
-        {"id": "cond2", "type": "condition", "position": {"x": 800, "y": 0}, "data": {"keyword": "x"}}
-    )
-    for edge in graph["edges"]:
-        if edge["id"] == "agent-end":
-            edge["target"] = "cond2"
-    graph["edges"].append({"id": "cond2-a", "source": "cond2", "target": "end", "sourceHandle": "true"})
-    graph["edges"].append({"id": "cond2-b", "source": "cond2", "target": "end", "sourceHandle": "false"})
+        if node["type"] == "agent":
+            node["data"]["name"] = "Same name"
     response = client.post("/workflows", json={"name": "A", "graph": graph})
     assert response.status_code == 422
 
@@ -233,13 +282,24 @@ def test_create_workflow_rejects_start_edge_to_if_else(client):
     assert response.status_code == 422
 
 
-def test_create_workflow_rejects_if_else_branch_to_agent(client):
+def test_create_workflow_accepts_if_else_branch_to_specialist_agent(client):
+    """An if/else branch may route into a further agent node — e.g. a
+    triage agent handing billing questions to a dedicated billing agent."""
     graph = _if_else_graph(_BRANCHES)
+    graph["nodes"].append(
+        {
+            "id": "billing-agent",
+            "type": "agent",
+            "position": {"x": 600, "y": 0},
+            "data": {"name": "Billing agent", "system_prompt": "", "enabled_tools": []},
+        }
+    )
     for edge in graph["edges"]:
         if edge["id"] == "ifelse-billing":
-            edge["target"] = "agent"
+            edge["target"] = "billing-agent"
+    graph["edges"].append({"id": "billing-agent-end", "source": "billing-agent", "target": "end_billing"})
     response = client.post("/workflows", json={"name": "A", "graph": graph})
-    assert response.status_code == 422
+    assert response.status_code == 201
 
 
 def test_create_workflow_accepts_sticky_note(client):

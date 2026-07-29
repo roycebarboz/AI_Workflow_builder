@@ -63,21 +63,29 @@ class ChatRequest(BaseModel):
 
 def _to_sse(event: AgentEvent) -> dict:
     if isinstance(event, TokenEvent):
-        return {"event": "token", "data": json.dumps({"text": event.text})}
+        return {"event": "token", "data": json.dumps({"text": event.text, "agent_name": event.agent_name})}
     if isinstance(event, ToolCallStartEvent):
         return {
             "event": "tool_call_start",
-            "data": json.dumps({"name": event.name, "arguments": event.arguments}),
+            "data": json.dumps(
+                {"name": event.name, "arguments": event.arguments, "agent_name": event.agent_name}
+            ),
         }
     if isinstance(event, ToolCallResultEvent):
         return {
             "event": "tool_call_result",
-            "data": json.dumps({"name": event.name, "result": event.result}),
+            "data": json.dumps({"name": event.name, "result": event.result, "agent_name": event.agent_name}),
         }
     if isinstance(event, FinalResponseEvent):
-        return {"event": "final_response", "data": json.dumps({"text": event.text})}
+        return {
+            "event": "final_response",
+            "data": json.dumps({"text": event.text, "agent_name": event.agent_name}),
+        }
     if isinstance(event, ErrorEvent):
-        return {"event": "error", "data": json.dumps({"message": event.message})}
+        return {
+            "event": "error",
+            "data": json.dumps({"message": event.message, "agent_name": event.agent_name}),
+        }
     raise ValueError(f"Unknown agent event type: {event!r}")
 
 

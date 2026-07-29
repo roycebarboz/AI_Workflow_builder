@@ -24,8 +24,8 @@ class FakeLLMClient:
         self._turns = list(turns)
         self.calls: list[dict] = []
 
-    def stream_chat(self, messages, tools):
-        self.calls.append({"messages": messages, "tools": tools})
+    def stream_chat(self, messages, tools, *, response_format=None):
+        self.calls.append({"messages": messages, "tools": tools, "response_format": response_format})
         return iter(self._turns.pop(0))
 
 
@@ -104,7 +104,7 @@ def test_chat_direct_answer_no_tool_call(client):
 
     events = _parse_sse(body)
     assert [e[0] for e in events] == ["token", "token", "final_response"]
-    assert events[-1][1] == {"text": "Hello!"}
+    assert events[-1][1] == {"text": "Hello!", "agent_name": "Agent"}
 
 
 def test_chat_with_tool_call(client):
@@ -138,9 +138,13 @@ def test_chat_with_tool_call(client):
         "token",
         "final_response",
     ]
-    assert events[0][1] == {"name": "calculator", "arguments": {"expression": "2 + 2"}}
-    assert events[1][1] == {"name": "calculator", "result": "4"}
-    assert events[-1][1] == {"text": "4"}
+    assert events[0][1] == {
+        "name": "calculator",
+        "arguments": {"expression": "2 + 2"},
+        "agent_name": "Agent",
+    }
+    assert events[1][1] == {"name": "calculator", "result": "4", "agent_name": "Agent"}
+    assert events[-1][1] == {"text": "4", "agent_name": "Agent"}
 
 
 def test_chat_with_send_email_tool(client):
@@ -191,6 +195,7 @@ def test_chat_with_send_email_tool(client):
     assert events[1][1] == {
         "name": "send_email",
         "result": "Mock email sent to a@example.com (subject: 'Hi')",
+        "agent_name": "Agent",
     }
 
 
@@ -224,7 +229,7 @@ def test_chat_surfaces_tool_failure_as_error_event(client, monkeypatch):
 
     events = _parse_sse(body)
     assert [e[0] for e in events] == ["tool_call_start", "error"]
-    assert events[1][1] == {"message": "Tool 'calculator' failed: kaboom"}
+    assert events[1][1] == {"message": "Tool 'calculator' failed: kaboom", "agent_name": "Agent"}
 
 
 def test_chat_rejects_empty_messages(client):

@@ -1,5 +1,5 @@
 import type { ToolInfo, Workflow, WorkflowGraph } from "../types";
-import { API_BASE_URL, asJson } from "./client";
+import { API_BASE_URL, assertOk, asJson } from "./client";
 
 export interface WorkflowInput {
   name: string;
@@ -32,6 +32,10 @@ export async function updateWorkflow(id: string, input: WorkflowInput): Promise<
       body: JSON.stringify(input),
     })
   );
+}
+
+export async function deleteWorkflow(id: string): Promise<void> {
+  return assertOk(await fetch(`${API_BASE_URL}/workflows/${id}`, { method: "DELETE" }));
 }
 
 export async function listTools(): Promise<ToolInfo[]> {
